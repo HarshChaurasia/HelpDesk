@@ -22,6 +22,8 @@ export interface ProcessResult {
   createdMessageId?: string | null;
 }
 
+const LAST_POLL_KEY = 'imapLastPoll';
+
 @Injectable()
 export class ImapIngestService {
   readonly logger = new Logger('ImapIngest');
@@ -32,18 +34,48 @@ export class ImapIngestService {
     readonly tickets: TicketsService,
   ) {}
 
-  private async getImapConfig() {
-    const keys = ['imapEnabled', 'imapHost', 'imapPort', 'imapSecure', 'imapUser', 'imapPass'];
-    const rows = await this.prisma.setting.findMany({ where: { key: { in: keys } } });
-    const s = Object.fromEntries(rows.map((r) => [r.key, r.value]));
+  private getImapConfig() {
     return {
-      enabled: (s.imapEnabled ?? process.env.IMAP_ENABLED) === 'true',
-      host: s.imapHost || process.env.IMAP_HOST || '',
-      port: parseInt(s.imapPort || process.env.IMAP_PORT || '993', 10),
-      secure: (s.imapSecure ?? process.env.IMAP_SECURE ?? 'true') !== 'false',
-      user: s.imapUser || process.env.IMAP_USER || '',
-      pass: s.imapPass || process.env.IMAP_PASS || '',
+      enabled: process.env.IMAP_ENABLED === 'true',
+      host: process.env.IMAP_HOST || '',
+      port: parseInt(process.env.IMAP_PORT || '993', 10),
+      secure: process.env.IMAP_SECURE !== 'false',
+      user: process.env.IMAP_USER || '',
+      pass: process.env.IMAP_PASS || '',
     };
+  }
+
+  private async getLastPollDate(): Promise<Date> {
+    // Check process.env first (fast, set after each poll)
+    if (process.env.IMAP_LAST_POLL) {
+      const d = new Date(process.env.IMAP_LAST_POLL);
+      if (!isNaN(d.getTime())) return d;
+    }
+    // Fall back to DB (survives restarts)
+    try {
+      const row = await this.prisma.setting.findUnique({ where: { key: LAST_POLL_KEY } });
+      if (row) {
+        const d = new Date(row.value);
+        if (!isNaN(d.getTime())) {
+          process.env.IMAP_LAST_POLL = row.value; // warm the cache
+          return d;
+        }
+      }
+    } catch { /* Setting table may not exist yet */ }
+    // First ever poll — go back 30 days
+    return new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
+  }
+
+  private async saveLastPollDate(date: Date): Promise<void> {
+    const value = date.toISOString();
+    process.env.IMAP_LAST_POLL = value;
+    try {
+      await this.prisma.setting.upsert({
+        where:  { key: LAST_POLL_KEY },
+        update: { value },
+        create: { key: LAST_POLL_KEY, value },
+      });
+    } catch { /* Setting table may not exist yet */ }
   }
 
   /**
@@ -119,18 +151,30 @@ export class ImapIngestService {
     return result;
   }
 
-  async testConnection(): Promise<{ ok: boolean; messageCount?: number; message: string }> {
-    const cfg = await this.getImapConfig();
-    if (!cfg.host || !cfg.user) {
-      return { ok: false, message: 'IMAP host or user not configured' };
-    }
+  private makeClient(cfg: ReturnType<typeof this.getImapConfig>) {
     const client = new ImapFlow({
       host: cfg.host,
       port: cfg.port,
       secure: cfg.secure,
       auth: { user: cfg.user, pass: cfg.pass },
       logger: false,
+      connectionTimeout: 15000,
+      greetingTimeout: 10000,
+      socketTimeout: 30000,
+    } as any);
+    // Prevent unhandled 'error' event from crashing Node
+    client.on('error', (err: Error) => {
+      this.logger.warn(`IMAP client error: ${err.message}`);
     });
+    return client;
+  }
+
+  async testConnection(): Promise<{ ok: boolean; messageCount?: number; message: string }> {
+    const cfg = this.getImapConfig();
+    if (!cfg.host || !cfg.user) {
+      return { ok: false, message: 'IMAP host or user not configured' };
+    }
+    const client = this.makeClient(cfg);
     try {
       await client.connect();
       const status = await client.status('INBOX', { messages: true });
@@ -146,52 +190,61 @@ export class ImapIngestService {
     }
   }
 
-  async poll(): Promise<{ processed: number }> {
-    const cfg = await this.getImapConfig();
-    if (!cfg.enabled) return { processed: 0 };
-    if (this.running) return { processed: 0 };
+  async poll(): Promise<{ processed: number; since: string }> {
+    const cfg = this.getImapConfig();
+    if (!cfg.enabled) return { processed: 0, since: '' };
+    if (this.running) return { processed: 0, since: '' };
     this.running = true;
     let processed = 0;
 
-    const client = new ImapFlow({
-      host: cfg.host,
-      port: cfg.port,
-      secure: cfg.secure,
-      auth: { user: cfg.user, pass: cfg.pass },
-      logger: false,
-    });
+    // Always search the last 24 hours — IMAP SINCE is date-only so this
+    // effectively means "yesterday and today". The processedEmail dedup table
+    // prevents re-processing anything already seen.
+    const since = new Date(Date.now() - 24 * 60 * 60 * 1000);
+    const pollStartedAt = new Date();
+
+    const client = this.makeClient(cfg);
 
     try {
       await client.connect();
       const lock = await client.getMailboxLock('INBOX');
       try {
-        for await (const msg of client.fetch({ seen: false }, { source: true })) {
-          const parsed = await simpleParser(msg.source as Buffer);
-          const messageId = parsed.messageId ?? `imap-${msg.uid}`;
-          const from = parsed.from?.value?.[0];
-          const isAutoReply = !!(
-            parsed.headers.get('auto-submitted') ||
-            parsed.headers.get('x-autoreply')
-          );
+        // IMAP SINCE is date-only (truncates time), so we may get some messages
+        // just before our window — the processedEmail dedup table handles those.
+        const uids = (await client.search({ since }, { uid: true })) || [];
+        this.logger.log(`IMAP search since ${since.toISOString()} → ${(uids as number[]).length} candidate(s)`);
 
-          const result = await this.processEmailMessage({
-            messageId,
-            fromEmail: from?.address?.toLowerCase() ?? '',
-            fromName: from?.name || from?.address || 'Unknown',
-            subject: parsed.subject ?? '(no subject)',
-            body:
-              parsed.text ||
-              (typeof parsed.html === 'string' ? parsed.html : '') ||
-              '',
-            isAutoReply,
-          });
+        if ((uids as number[]).length > 0) {
+          for await (const msg of client.fetch(uids as number[], { source: true }, { uid: true })) {
+            const parsed = await simpleParser(msg.source as Buffer);
+            const messageId = parsed.messageId ?? `imap-${msg.uid}`;
+            const from = parsed.from?.value?.[0];
+            const isAutoReply = !!(
+              parsed.headers.get('auto-submitted') ||
+              parsed.headers.get('x-autoreply')
+            );
 
-          await client.messageFlagsAdd(msg.uid, ['\\Seen'], { uid: true });
-          if (result.outcome !== 'DUPLICATE') processed++;
+            const result = await this.processEmailMessage({
+              messageId,
+              fromEmail: from?.address?.toLowerCase() ?? '',
+              fromName: from?.name || from?.address || 'Unknown',
+              subject: parsed.subject ?? '(no subject)',
+              body:
+                parsed.text ||
+                (typeof parsed.html === 'string' ? parsed.html : '') ||
+                '',
+              isAutoReply,
+            });
+
+            if (result.outcome !== 'DUPLICATE') processed++;
+          }
         }
       } finally {
         lock.release();
       }
+
+      // Only advance the cursor on success
+      await this.saveLastPollDate(pollStartedAt);
     } catch (err) {
       this.logger.error(`IMAP poll failed: ${err}`);
     } finally {
@@ -199,7 +252,7 @@ export class ImapIngestService {
       this.running = false;
     }
 
-    if (processed) this.logger.log(`Ingested ${processed} email(s)`);
-    return { processed };
+    if (processed) this.logger.log(`Ingested ${processed} email(s) since ${since.toISOString()}`);
+    return { processed, since: since.toISOString() };
   }
 }

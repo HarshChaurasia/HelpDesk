@@ -1,6 +1,5 @@
 import { Injectable, Logger } from '@nestjs/common';
 import * as nodemailer from 'nodemailer';
-import { PrismaService } from '../prisma/prisma.service';
 
 export interface MailMessage {
   to: string;
@@ -22,19 +21,14 @@ export interface SmtpConfig {
 export class MailerService {
   private readonly logger = new Logger('Mailer');
 
-  constructor(private readonly prisma: PrismaService) {}
-
-  async getConfig(): Promise<SmtpConfig> {
-    const keys = ['smtpHost', 'smtpPort', 'smtpSecure', 'smtpUser', 'smtpPass', 'mailFrom'];
-    const rows = await this.prisma.setting.findMany({ where: { key: { in: keys } } });
-    const s = Object.fromEntries(rows.map((r) => [r.key, r.value]));
+  getConfig(): SmtpConfig {
     return {
-      host: s.smtpHost || process.env.SMTP_HOST || 'localhost',
-      port: parseInt(s.smtpPort || process.env.SMTP_PORT || '1025', 10),
-      secure: (s.smtpSecure ?? process.env.SMTP_SECURE) === 'true',
-      user: s.smtpUser || process.env.SMTP_USER || undefined,
-      pass: s.smtpPass || process.env.SMTP_PASS || undefined,
-      from: s.mailFrom || process.env.MAIL_FROM || 'Help Desk <support@helpdesk.local>',
+      host: process.env.SMTP_HOST || 'localhost',
+      port: parseInt(process.env.SMTP_PORT || '1025', 10),
+      secure: process.env.SMTP_SECURE === 'true',
+      user: process.env.SMTP_USER || undefined,
+      pass: process.env.SMTP_PASS || undefined,
+      from: process.env.MAIL_FROM || 'Help Desk <support@helpdesk.local>',
     };
   }
 
@@ -48,7 +42,7 @@ export class MailerService {
   }
 
   async send(msg: MailMessage): Promise<void> {
-    const cfg = await this.getConfig();
+    const cfg = this.getConfig();
     const transport = this.createTransport(cfg);
     try {
       await transport.sendMail({
@@ -64,7 +58,7 @@ export class MailerService {
   }
 
   async testConnection(to: string): Promise<{ ok: boolean; message: string }> {
-    const cfg = await this.getConfig();
+    const cfg = this.getConfig();
     const transport = this.createTransport(cfg);
     try {
       await transport.verify();

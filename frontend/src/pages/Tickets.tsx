@@ -1,4 +1,4 @@
-import { useQuery } from '@tanstack/react-query';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { Link } from 'react-router-dom';
 import { useState } from 'react';
 import { api } from '../api';
@@ -17,8 +17,29 @@ function Avatar({ name }: { name: string }) {
 
 export default function Tickets() {
   const { user } = useAuth();
+  const qc = useQueryClient();
   const [status, setStatus] = useState('');
   const [scope, setScope] = useState('');
+  const [polling, setPolling] = useState(false);
+  const [pollMsg, setPollMsg] = useState<string | null>(null);
+
+  async function pollNow() {
+    setPolling(true);
+    setPollMsg(null);
+    try {
+      const res = await api.post('/admin/mail/poll-now');
+      const { processed } = res.data;
+      setPollMsg(processed > 0
+        ? `✓ ${processed} new email${processed === 1 ? '' : 's'} imported`
+        : '✓ No new emails');
+      if (processed > 0) qc.invalidateQueries({ queryKey: ['tickets'] });
+    } catch {
+      setPollMsg('✗ Poll failed');
+    } finally {
+      setPolling(false);
+      setTimeout(() => setPollMsg(null), 4000);
+    }
+  }
 
   const { data, isLoading, isError } = useQuery({
     queryKey: ['tickets', status, scope],
@@ -42,12 +63,22 @@ export default function Tickets() {
           <div className="page-title">Tickets</div>
           {!isLoading && <div className="page-subtitle">{total} ticket{total !== 1 ? 's' : ''}</div>}
         </div>
-        <Link to="/tickets/new" className="btn btn-primary">
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-            <path d="M5 12h14"/><path d="M12 5v14"/>
-          </svg>
-          New Ticket
-        </Link>
+        <div style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
+          {user?.role === 'ADMIN' && (
+            <>
+              {pollMsg && <span style={{ fontSize: 13, color: pollMsg.startsWith('✓') ? '#16a34a' : '#b91c1c' }}>{pollMsg}</span>}
+              <button className="btn btn-secondary" onClick={pollNow} disabled={polling} title="Fetch new emails and create tickets">
+                {polling ? <><span className="spinner" style={{ width: 13, height: 13 }} /> Polling…</> : '↓ Poll inbox'}
+              </button>
+            </>
+          )}
+          <Link to="/tickets/new" className="btn btn-primary">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M5 12h14"/><path d="M12 5v14"/>
+            </svg>
+            New Ticket
+          </Link>
+        </div>
       </div>
 
       {/* Filters */}

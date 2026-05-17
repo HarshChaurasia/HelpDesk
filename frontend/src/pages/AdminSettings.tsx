@@ -89,7 +89,7 @@ function EmailSettings() {
     }
   }
 
-  function handleSave(e: React.FormEvent) {
+function handleSave(e: React.FormEvent) {
     e.preventDefault();
     saveMutation.mutate(form);
   }
@@ -152,7 +152,7 @@ function EmailSettings() {
               type="button"
               className="btn btn-secondary btn-sm"
               onClick={testImap}
-              disabled={testing === 'imap'}
+              disabled={!!testing}
             >
               {testing === 'imap' ? <><span className="spinner" style={{ width: 13, height: 13 }} /> Testing…</> : 'Test connection'}
             </button>
