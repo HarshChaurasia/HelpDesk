@@ -136,6 +136,20 @@ async function main() {
     });
   }
 
+  const defaultSettings = [
+    { key: 'autoCloseDays', value: '5' },
+    { key: 'imapEnabled', value: 'false' },
+    { key: 'smtpHost', value: '' },
+    { key: 'imapHost', value: '' },
+  ];
+  for (const s of defaultSettings) {
+    await prisma.setting.upsert({
+      where: { key: s.key },
+      update: {},
+      create: s,
+    });
+  }
+
   // eslint-disable-next-line no-console
   console.log('Seed complete. Logins use password: Passw0rd!');
 }

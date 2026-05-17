@@ -1,6 +1,7 @@
 import { Body, Controller, Get, Post, Req, Res } from '@nestjs/common';
 import { Request, Response } from 'express';
 import { ApiTags, ApiBearerAuth } from '@nestjs/swagger';
+import { Throttle } from '@nestjs/throttler';
 import { AuthService } from './auth.service';
 import {
   RegisterDto,
@@ -20,6 +21,8 @@ const cookieOpts = {
   maxAge: 7 * 24 * 3600 * 1000,
 };
 
+// Auth endpoints are brute-force targets — tighten to 10 req/min per IP/user.
+@Throttle({ default: { limit: 10, ttl: 60000 } })
 @ApiTags('auth')
 @ApiBearerAuth('access-token')
 @Controller('auth')

@@ -166,16 +166,30 @@ export class TicketsService {
     subject: string,
     body: string,
     sourceMessageId: string,
+    categoryName?: string,
+    parsedPriority?: string,
   ) {
     const customer = await this.resolveCustomerByEmail(fromEmail, fromName);
-    const sla = await this.computeSla(Priority.MEDIUM, null);
+    const priority: Priority = (parsedPriority as Priority) ?? Priority.MEDIUM;
+
+    // Resolve category by name if provided
+    let categoryId: string | null = null;
+    if (categoryName) {
+      const cat = await this.prisma.category.findFirst({
+        where: { name: { equals: categoryName, mode: 'insensitive' }, isActive: true },
+      });
+      categoryId = cat?.id ?? null;
+    }
+
+    const sla = await this.computeSla(priority, categoryId);
     const reference = await this.nextReference();
     const ticket = await this.prisma.ticket.create({
       data: {
         reference,
         subject,
-        priority: Priority.MEDIUM,
+        priority,
         channel: Channel.EMAIL,
+        categoryId,
         createdById: customer.id,
         ...sla,
         messages: {
@@ -506,5 +520,34 @@ export class TicketsService {
       undefined,
     );
     return { ok: true };
+  }
+
+  async uploadAttachment(
+    ticketId: string,
+    file: Express.Multer.File,
+    user: AuthUser,
+  ) {
+    await this.assertAccess(ticketId, user);
+    return this.prisma.attachment.create({
+      data: {
+        ticketId,
+        fileName: file.originalname,
+        mimeType: file.mimetype,
+        sizeBytes: file.size,
+        storageKey: file.filename,
+        uploadedById: user.id,
+      },
+    });
+  }
+
+  async getAttachment(attachmentId: string, user: AuthUser) {
+    const attachment = await this.prisma.attachment.findUnique({
+      where: { id: attachmentId },
+    });
+    if (!attachment) throw new NotFoundException('Attachment not found');
+    if (attachment.ticketId) {
+      await this.assertAccess(attachment.ticketId, user);
+    }
+    return attachment;
   }
 }

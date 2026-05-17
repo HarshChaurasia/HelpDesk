@@ -240,3 +240,9 @@ model Counter {
   name  String @id
   value Int    @default(0)
 }
+
+model Setting {
+  key       String   @id
+  value     String
+  updatedAt DateTime @updatedAt
+}
