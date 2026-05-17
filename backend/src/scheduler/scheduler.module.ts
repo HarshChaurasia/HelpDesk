@@ -8,5 +8,6 @@ import { PrismaModule } from '../prisma/prisma.module';
   imports: [MailModule, PrismaModule],
   controllers: [AdminController],
   providers: [SchedulerService],
+  exports: [],
 })
 export class SchedulerModule {}
