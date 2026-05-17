@@ -34,7 +34,10 @@ export class SchedulerService {
 
   @Cron(CronExpression.EVERY_HOUR)
   async autoClose() {
-    const days = parseInt(process.env.AUTO_CLOSE_DAYS ?? '5', 10);
+    const setting = await this.prisma.setting.findUnique({
+      where: { key: 'autoCloseDays' },
+    });
+    const days = parseInt(setting?.value ?? process.env.AUTO_CLOSE_DAYS ?? '5', 10);
     const cutoff = new Date(Date.now() - days * 24 * 3600 * 1000);
     const stale = await this.prisma.ticket.findMany({
       where: {

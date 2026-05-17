@@ -7,6 +7,7 @@ import {
 } from '@nestjs/common';
 import { Reflector } from '@nestjs/core';
 import { JwtService } from '@nestjs/jwt';
+import { ThrottlerGuard } from '@nestjs/throttler';
 import { Role } from '@prisma/client';
 import { ROLES_KEY, IS_PUBLIC_KEY } from './decorators';
 
@@ -37,6 +38,14 @@ export class JwtAuthGuard implements CanActivate {
     } catch {
       throw new UnauthorizedException('Invalid or expired token');
     }
+  }
+}
+
+@Injectable()
+export class UserThrottlerGuard extends ThrottlerGuard {
+  protected async getTracker(req: Record<string, any>): Promise<string> {
+    // Use authenticated user ID when available so limits are per-user, not per-IP.
+    return req.user?.id ?? req.ip ?? 'unknown';
   }
 }
 

@@ -507,4 +507,33 @@ export class TicketsService {
     );
     return { ok: true };
   }
+
+  async uploadAttachment(
+    ticketId: string,
+    file: Express.Multer.File,
+    user: AuthUser,
+  ) {
+    await this.assertAccess(ticketId, user);
+    return this.prisma.attachment.create({
+      data: {
+        ticketId,
+        fileName: file.originalname,
+        mimeType: file.mimetype,
+        sizeBytes: file.size,
+        storageKey: file.filename,
+        uploadedById: user.id,
+      },
+    });
+  }
+
+  async getAttachment(attachmentId: string, user: AuthUser) {
+    const attachment = await this.prisma.attachment.findUnique({
+      where: { id: attachmentId },
+    });
+    if (!attachment) throw new NotFoundException('Attachment not found');
+    if (attachment.ticketId) {
+      await this.assertAccess(attachment.ticketId, user);
+    }
+    return attachment;
+  }
 }
