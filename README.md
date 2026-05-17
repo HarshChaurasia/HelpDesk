@@ -36,3 +36,6 @@ See [docs/](docs/00-README.md) for full specifications.
 
 <img width="1916" height="901" alt="image" src="https://github.com/user-attachments/assets/e5969f3c-0141-4ebb-b2d4-47df60112d8b" />
 
+<img width="1796" height="955" alt="image" src="https://github.com/user-attachments/assets/4f762bb6-dfdb-4154-9c1c-25e836e254d6" />
+
+
