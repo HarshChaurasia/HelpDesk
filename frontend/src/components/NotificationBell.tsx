@@ -34,7 +34,7 @@ export default function NotificationBell() {
   useEffect(() => {
     api.post('/auth/refresh').then(({ data }) => {
       socket?.disconnect();
-      socket = io(import.meta.env.VITE_API_URL ?? '', { path: '/ws', auth: { token: data.accessToken } });
+      socket = io((import.meta.env.VITE_API_URL ?? '').replace(/\/+$/, ''), { path: '/ws', auth: { token: data.accessToken } });
       socket.on('notification:new', () => {
         qc.invalidateQueries({ queryKey: ['unread'] });
         qc.invalidateQueries({ queryKey: ['notifs'] });
