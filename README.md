@@ -33,3 +33,6 @@ Default seeded logins (dev only):
 | Customer | customer1@helpdesk.local | Passw0rd! |
 
 See [docs/](docs/00-README.md) for full specifications.
+
+<img width="1916" height="901" alt="image" src="https://github.com/user-attachments/assets/e5969f3c-0141-4ebb-b2d4-47df60112d8b" />
+
