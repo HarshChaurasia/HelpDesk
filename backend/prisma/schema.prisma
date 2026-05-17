@@ -1,0 +1,242 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum Role {
+  CUSTOMER
+  AGENT
+  ADMIN
+}
+
+enum TicketStatus {
+  NEW
+  OPEN
+  IN_PROGRESS
+  PENDING_CUSTOMER
+  RESOLVED
+  CLOSED
+  REOPENED
+}
+
+enum Priority {
+  LOW
+  MEDIUM
+  HIGH
+  URGENT
+}
+
+enum MessageType {
+  PUBLIC_REPLY
+  INTERNAL_NOTE
+}
+
+enum Channel {
+  WEB
+  EMAIL
+}
+
+enum NotifChannelPref {
+  IN_APP
+  EMAIL
+  BOTH
+  OFF
+}
+
+enum EventType {
+  CREATED
+  STATUS_CHANGED
+  ASSIGNED
+  PRIORITY_CHANGED
+  WATCHER_ADDED
+  WATCHER_REMOVED
+  MESSAGE_ADDED
+  REOPENED
+  CLOSED
+}
+
+model User {
+  id           String           @id @default(uuid())
+  email        String           @unique
+  passwordHash String?
+  fullName     String
+  role         Role             @default(CUSTOMER)
+  isActive     Boolean          @default(true)
+  notifPref    NotifChannelPref @default(BOTH)
+  createdAt    DateTime         @default(now())
+  updatedAt    DateTime         @updatedAt
+
+  createdTickets  Ticket[]        @relation("CreatedBy")
+  assignedTickets Ticket[]        @relation("AssignedTo")
+  watching        TicketWatcher[]
+  messages        Message[]
+  events          TicketEvent[]
+  notifications   Notification[]
+  refreshTokens   RefreshToken[]
+  resetTokens     PasswordResetToken[]
+}
+
+model SlaPolicy {
+  id             String     @id @default(uuid())
+  name           String     @unique
+  responseMins   Json
+  resolutionMins Json
+  createdAt      DateTime   @default(now())
+  updatedAt      DateTime   @updatedAt
+  categories     Category[]
+}
+
+model Category {
+  id          String     @id @default(uuid())
+  name        String     @unique
+  description String?
+  slaPolicyId String?
+  slaPolicy   SlaPolicy? @relation(fields: [slaPolicyId], references: [id])
+  isActive    Boolean    @default(true)
+  tickets     Ticket[]
+}
+
+model Ticket {
+  id                     String       @id @default(uuid())
+  reference              String       @unique
+  subject                String
+  status                 TicketStatus @default(NEW)
+  priority               Priority     @default(MEDIUM)
+  channel                Channel      @default(WEB)
+  categoryId             String?
+  category               Category?    @relation(fields: [categoryId], references: [id])
+  createdById            String
+  createdBy              User         @relation("CreatedBy", fields: [createdById], references: [id])
+  assignedToId           String?
+  assignedTo             User?        @relation("AssignedTo", fields: [assignedToId], references: [id])
+  firstResponseAt        DateTime?
+  resolvedAt             DateTime?
+  closedAt               DateTime?
+  slaResponseDueAt       DateTime?
+  slaResolutionDueAt     DateTime?
+  slaBreached            Boolean      @default(false)
+  lastCustomerActivityAt DateTime     @default(now())
+  createdAt              DateTime     @default(now())
+  updatedAt              DateTime     @updatedAt
+
+  watchers     TicketWatcher[]
+  messages     Message[]
+  events       TicketEvent[]
+  attachments  Attachment[]
+  notifications Notification[]
+
+  @@index([status])
+  @@index([assignedToId, status])
+  @@index([categoryId])
+  @@index([createdById])
+  @@index([createdAt])
+}
+
+model TicketWatcher {
+  ticketId String
+  ticket   Ticket   @relation(fields: [ticketId], references: [id], onDelete: Cascade)
+  userId   String
+  user     User     @relation(fields: [userId], references: [id])
+  addedAt  DateTime @default(now())
+
+  @@id([ticketId, userId])
+}
+
+model Message {
+  id              String      @id @default(uuid())
+  ticketId        String
+  ticket          Ticket      @relation(fields: [ticketId], references: [id], onDelete: Cascade)
+  authorId        String?
+  author          User?       @relation(fields: [authorId], references: [id])
+  type            MessageType @default(PUBLIC_REPLY)
+  body            String
+  channel         Channel     @default(WEB)
+  sourceMessageId String?
+  createdAt       DateTime    @default(now())
+  attachments     Attachment[]
+
+  @@index([ticketId, createdAt])
+}
+
+model Attachment {
+  id           String   @id @default(uuid())
+  ticketId     String?
+  ticket       Ticket?  @relation(fields: [ticketId], references: [id], onDelete: Cascade)
+  messageId    String?
+  message      Message? @relation(fields: [messageId], references: [id], onDelete: Cascade)
+  fileName     String
+  mimeType     String
+  sizeBytes    Int
+  storageKey   String
+  uploadedById String?
+  createdAt    DateTime @default(now())
+}
+
+model TicketEvent {
+  id        String    @id @default(uuid())
+  ticketId  String
+  ticket    Ticket    @relation(fields: [ticketId], references: [id], onDelete: Cascade)
+  actorId   String?
+  actor     User?     @relation(fields: [actorId], references: [id])
+  type      EventType
+  fromValue String?
+  toValue   String?
+  metadata  Json?
+  createdAt DateTime  @default(now())
+
+  @@index([ticketId, createdAt])
+}
+
+model Notification {
+  id          String    @id @default(uuid())
+  userId      String
+  user        User      @relation(fields: [userId], references: [id])
+  ticketId    String?
+  ticket      Ticket?   @relation(fields: [ticketId], references: [id], onDelete: Cascade)
+  eventType   EventType
+  title       String
+  body        String
+  isRead      Boolean   @default(false)
+  emailSentAt DateTime?
+  createdAt   DateTime  @default(now())
+
+  @@index([userId, isRead, createdAt])
+}
+
+model RefreshToken {
+  id        String    @id @default(uuid())
+  userId    String
+  user      User      @relation(fields: [userId], references: [id])
+  tokenHash String
+  expiresAt DateTime
+  revokedAt DateTime?
+  createdAt DateTime  @default(now())
+}
+
+model PasswordResetToken {
+  id        String    @id @default(uuid())
+  userId    String
+  user      User      @relation(fields: [userId], references: [id])
+  tokenHash String
+  expiresAt DateTime
+  usedAt    DateTime?
+  createdAt DateTime  @default(now())
+}
+
+model ProcessedEmail {
+  id               String   @id @default(uuid())
+  messageId        String   @unique
+  ticketId         String?
+  createdMessageId String?
+  outcome          String
+  processedAt      DateTime @default(now())
+}
+
+model Counter {
+  name  String @id
+  value Int    @default(0)
+}
