@@ -1,0 +1,1 @@
+{"root":["./src/app.tsx","./src/api.ts","./src/auth.tsx","./src/main.tsx","./src/components/notificationbell.tsx","./src/pages/adminusers.tsx","./src/pages/login.tsx","./src/pages/newticket.tsx","./src/pages/reports.tsx","./src/pages/ticketdetail.tsx","./src/pages/tickets.tsx"],"version":"5.9.3"}
