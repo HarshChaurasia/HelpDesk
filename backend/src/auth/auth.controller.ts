@@ -11,10 +11,11 @@ import {
 import { Public, CurrentUser, AuthUser } from '../common/decorators';
 
 const REFRESH_COOKIE = 'hd_refresh';
+const isProd = process.env.NODE_ENV === 'production';
 const cookieOpts = {
   httpOnly: true,
-  sameSite: 'lax' as const,
-  secure: process.env.NODE_ENV === 'production',
+  sameSite: (isProd ? 'none' : 'lax') as 'none' | 'lax',
+  secure: isProd,
   path: '/api/v1/auth',
   maxAge: 7 * 24 * 3600 * 1000,
 };
