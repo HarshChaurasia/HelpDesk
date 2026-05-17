@@ -33,7 +33,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     (async () => {
       try {
-        const { data } = await api.post('/auth/refresh');
+        const { data } = await api.post('/auth/refresh', null, { timeout: 5000 });
         setToken(data.accessToken);
         setUser(data.user);
       } catch {
