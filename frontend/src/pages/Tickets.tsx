@@ -20,7 +20,7 @@ export default function Tickets() {
   const [status, setStatus] = useState('');
   const [scope, setScope] = useState('');
 
-  const { data, isLoading, isError } = useQuery({
+  const { data, isLoading, isError, error } = useQuery({
     queryKey: ['tickets', status, scope],
     queryFn: async () => {
       const params: Record<string, string> = {};
@@ -84,7 +84,10 @@ export default function Tickets() {
           <span className="spinner" /> Loading tickets…
         </div>
       ) : isError ? (
-        <div className="alert alert-error">Failed to load tickets. Make sure the API is reachable.</div>
+        <div className="alert alert-error">
+          Failed to load tickets — {(error as any)?.message ?? 'API unreachable'}.{' '}
+          <a href="javascript:void(0)" onClick={() => window.location.reload()}>Retry</a>
+        </div>
       ) : (
         <div className="table-wrap">
           <table>
