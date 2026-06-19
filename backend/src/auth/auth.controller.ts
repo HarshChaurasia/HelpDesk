@@ -1,7 +1,7 @@
-import { Body, Controller, Get, Post, Req, Res } from '@nestjs/common';
-import { Request, Response } from 'express';
+import { Body, Controller, Get, Post } from '@nestjs/common';
 import { ApiTags, ApiBearerAuth } from '@nestjs/swagger';
 import { Throttle } from '@nestjs/throttler';
+import { IsString } from 'class-validator';
 import { AuthService } from './auth.service';
 import {
   RegisterDto,
@@ -11,15 +11,13 @@ import {
 } from './dto';
 import { Public, CurrentUser, AuthUser } from '../common/decorators';
 
-const REFRESH_COOKIE = 'hd_refresh';
-const isProd = process.env.NODE_ENV === 'production';
-const cookieOpts = {
-  httpOnly: true,
-  sameSite: (isProd ? 'none' : 'lax') as 'none' | 'lax',
-  secure: isProd,
-  path: '/api/v1/auth',
-  maxAge: 7 * 24 * 3600 * 1000,
-};
+class RefreshDto {
+  @IsString() refreshToken: string;
+}
+
+class LogoutDto {
+  @IsString() refreshToken: string;
+}
 
 // Auth endpoints are brute-force targets — tighten to 10 req/min per IP/user.
 @Throttle({ default: { limit: 10, ttl: 60000 } })
@@ -29,40 +27,27 @@ const cookieOpts = {
 export class AuthController {
   constructor(private readonly auth: AuthService) {}
 
-  private setRefresh(res: Response, token: string) {
-    res.cookie(REFRESH_COOKIE, token, cookieOpts);
-  }
-
   @Public()
   @Post('register')
-  async register(@Body() dto: RegisterDto, @Res({ passthrough: true }) res: Response) {
-    const { refreshToken, ...rest } = await this.auth.register(dto);
-    this.setRefresh(res, refreshToken);
-    return rest;
+  register(@Body() dto: RegisterDto) {
+    return this.auth.register(dto);
   }
 
   @Public()
   @Post('login')
-  async login(@Body() dto: LoginDto, @Res({ passthrough: true }) res: Response) {
-    const { refreshToken, ...rest } = await this.auth.login(dto);
-    this.setRefresh(res, refreshToken);
-    return rest;
+  login(@Body() dto: LoginDto) {
+    return this.auth.login(dto);
   }
 
   @Public()
   @Post('refresh')
-  async refresh(@Req() req: Request, @Res({ passthrough: true }) res: Response) {
-    const token = req.cookies?.[REFRESH_COOKIE];
-    const { refreshToken, ...rest } = await this.auth.refresh(token);
-    this.setRefresh(res, refreshToken);
-    return rest;
+  refresh(@Body() dto: RefreshDto) {
+    return this.auth.refresh(dto.refreshToken);
   }
 
   @Post('logout')
-  async logout(@Req() req: Request, @Res({ passthrough: true }) res: Response) {
-    await this.auth.logout(req.cookies?.[REFRESH_COOKIE]);
-    res.clearCookie(REFRESH_COOKIE, { path: '/api/v1/auth' });
-    return { ok: true };
+  logout(@Body() dto: LogoutDto) {
+    return this.auth.logout(dto.refreshToken);
   }
 
   @Public()

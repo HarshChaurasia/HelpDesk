@@ -1,15 +1,13 @@
 import axios from 'axios';
+import { getStoredRefreshToken, setStoredRefreshToken } from './auth';
 
 export const api = axios.create({
   baseURL: (import.meta.env.VITE_API_URL ?? '').replace(/\/+$/, '') + '/api/v1',
-  withCredentials: true,
   timeout: 10000,
 });
 
 let accessToken: string | null = null;
-export function setToken(t: string | null) {
-  accessToken = t;
-}
+export function setToken(t: string | null) { accessToken = t; }
 
 api.interceptors.request.use((cfg) => {
   if (accessToken) cfg.headers.Authorization = `Bearer ${accessToken}`;
@@ -25,21 +23,27 @@ api.interceptors.response.use(
     if (err.response?.status === 401 && !original._retry) {
       original._retry = true;
       try {
+        const rt = getStoredRefreshToken();
+        if (!rt) throw new Error('No refresh token');
         refreshing =
           refreshing ??
           api
-            .post('/auth/refresh')
-            .then((res) => res.data.accessToken as string);
+            .post('/auth/refresh', { refreshToken: rt })
+            .then((res) => {
+              setStoredRefreshToken(res.data.refreshToken);
+              return res.data.accessToken as string;
+            });
         const token = await refreshing;
         refreshing = null;
         setToken(token);
         original.headers.Authorization = `Bearer ${token}`;
         return api(original);
-      } catch (e) {
+      } catch {
         refreshing = null;
         setToken(null);
+        setStoredRefreshToken(null);
         window.location.href = '/login';
-        return Promise.reject(e);
+        return Promise.reject(err);
       }
     }
     return Promise.reject(err);
