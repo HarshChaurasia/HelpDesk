@@ -21,6 +21,7 @@ export default function NewTicket() {
   const [subject, setSubject] = useState('');
   const [description, setDescription] = useState('');
   const [categoryId, setCategoryId] = useState('');
+  const [subcategoryId, setSubcategoryId] = useState('');
   const [priority, setPriority] = useState('MEDIUM');
   const [assignees, setAssignees] = useState<UserOption[]>([]);
   const [err, setErr] = useState('');
@@ -49,6 +50,7 @@ export default function NewTicket() {
         description,
         priority,
         categoryId: categoryId || undefined,
+        subcategoryId: subcategoryId || undefined,
         assigneeIds: assignees.map((a) => a.id),
       });
       nav(`/tickets/${data.id}`);
@@ -99,12 +101,22 @@ export default function NewTicket() {
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0 16px' }}>
             <div className="form-group">
               <label className="form-label">Category</label>
-              <select value={categoryId} onChange={(e) => setCategoryId(e.target.value)}>
+              <select value={categoryId} onChange={(e) => { setCategoryId(e.target.value); setSubcategoryId(''); }}>
                 <option value="">— Select category —</option>
                 {categories?.map((c: any) => (
                   <option key={c.id} value={c.id}>{c.name}</option>
                 ))}
               </select>
+              {categoryId && (() => {
+                const cat = categories?.find((c: any) => c.id === categoryId);
+                const subs = cat?.subcategories ?? [];
+                return subs.length > 0 ? (
+                  <select style={{ marginTop: 6 }} value={subcategoryId} onChange={(e) => setSubcategoryId(e.target.value)}>
+                    <option value="">— Subcategory —</option>
+                    {subs.map((s: any) => <option key={s.id} value={s.id}>{s.name}</option>)}
+                  </select>
+                ) : null;
+              })()}
             </div>
 
             <div className="form-group">

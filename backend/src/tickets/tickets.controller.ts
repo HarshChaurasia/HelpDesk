@@ -26,6 +26,9 @@ import {
   EditMessageDto,
   ReactionDto,
   WatcherDto,
+  TimeLogDto,
+  TagToggleDto,
+  BulkActionDto,
 } from './dto';
 import { ApiTags, ApiBearerAuth } from '@nestjs/swagger';
 import { Roles, CurrentUser, AuthUser } from '../common/decorators';
@@ -180,5 +183,33 @@ export class TicketsController {
   ) {
     if (!file) throw new BadRequestException('No file uploaded');
     return this.tickets.uploadAttachment(id, file, user);
+  }
+
+  @Roles('AGENT', 'ADMIN')
+  @Post(':id/tags')
+  toggleTag(
+    @Param('id') id: string,
+    @Body() dto: TagToggleDto,
+    @CurrentUser() user: AuthUser,
+  ) {
+    return this.tickets.toggleTag(id, dto.tagId, user);
+  }
+
+  @Post(':id/timelogs')
+  addTimeLog(
+    @Param('id') id: string,
+    @Body() dto: TimeLogDto,
+    @CurrentUser() user: AuthUser,
+  ) {
+    return this.tickets.addTimeLog(id, dto, user);
+  }
+
+  @Roles('AGENT', 'ADMIN')
+  @Post('bulk')
+  bulkAction(
+    @Body() dto: BulkActionDto,
+    @CurrentUser() user: AuthUser,
+  ) {
+    return this.tickets.bulkAction(dto, user);
   }
 }

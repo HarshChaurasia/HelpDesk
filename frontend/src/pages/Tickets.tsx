@@ -1,11 +1,23 @@
-import { useQuery, useQueryClient } from '@tanstack/react-query';
+import { useQuery, useQueryClient, useMutation } from '@tanstack/react-query';
 import { Link } from 'react-router-dom';
-import { useState } from 'react';
+import { useState, useMemo } from 'react';
 import { api } from '../api';
 import { useAuth } from '../auth';
 import { STATUS_LABELS, PRIORITY_LABELS, avatarInitials, avatarStyle, relativeTime } from '../utils';
 
-const STATUS_OPTIONS = ['', 'NEW', 'OPEN', 'IN_PROGRESS', 'PENDING_CUSTOMER', 'RESOLVED', 'CLOSED', 'REOPENED'] as const;
+const STATUS_OPTIONS = ['NEW', 'OPEN', 'IN_PROGRESS', 'PENDING_CUSTOMER', 'RESOLVED', 'CLOSED', 'REOPENED'];
+const PRIORITY_OPTIONS = ['LOW', 'MEDIUM', 'HIGH', 'URGENT'];
+
+function ticketAgeDays(createdAt: string) {
+  return (Date.now() - new Date(createdAt).getTime()) / 86400000;
+}
+
+function AgeBadge({ createdAt }: { createdAt: string }) {
+  const days = ticketAgeDays(createdAt);
+  const label = days < 1 ? `${Math.round(days * 24)}h` : `${Math.floor(days)}d`;
+  const cls = days < 1 ? 'age-green' : days < 3 ? 'age-yellow' : days < 7 ? 'age-orange' : 'age-red';
+  return <span className={`age-badge ${cls}`}>{label}</span>;
+}
 
 function Avatar({ name }: { name: string }) {
   return (
@@ -15,13 +27,108 @@ function Avatar({ name }: { name: string }) {
   );
 }
 
+type SortField = 'reference' | 'createdAt' | 'updatedAt' | 'priority' | 'status';
+
 export default function Tickets() {
   const { user } = useAuth();
   const qc = useQueryClient();
-  const [status, setStatus] = useState('');
+
+  // Filters
+  const [search, setSearch] = useState('');
+  const [statusFilter, setStatusFilter] = useState<string[]>([]);
+  const [priorityFilter, setPriorityFilter] = useState<string[]>([]);
+  const [categoryId, setCategoryId] = useState('');
   const [scope, setScope] = useState('');
+  const [showFilters, setShowFilters] = useState(false);
+
+  // Sort
+  const [sort, setSort] = useState<SortField>('createdAt');
+  const [dir, setDir] = useState<'asc' | 'desc'>('desc');
+
+  // Bulk select
+  const [selected, setSelected] = useState<Set<string>>(new Set());
+  const [bulkAction, setBulkAction] = useState('');
+
+  // Poll
   const [polling, setPolling] = useState(false);
   const [pollMsg, setPollMsg] = useState<string | null>(null);
+
+  const isStaff = user?.role !== 'CUSTOMER';
+
+  const queryParams = useMemo(() => {
+    const p: Record<string, any> = { sort, dir };
+    if (search) p.q = search;
+    if (statusFilter.length === 1) p.status = statusFilter[0];
+    if (priorityFilter.length === 1) p.priority = priorityFilter[0];
+    if (categoryId) p.categoryId = categoryId;
+    if (scope === 'mine') p.mine = 'true';
+    if (scope === 'unassigned') p.unassigned = 'true';
+    return p;
+  }, [search, statusFilter, priorityFilter, categoryId, scope, sort, dir]);
+
+  const { data, isLoading, isError, error } = useQuery({
+    queryKey: ['tickets', queryParams],
+    queryFn: async () => (await api.get('/tickets', { params: queryParams })).data,
+  });
+
+  const { data: categories = [] } = useQuery<any[]>({
+    queryKey: ['categories'],
+    queryFn: async () => (await api.get('/categories')).data,
+    enabled: isStaff,
+  });
+
+  const { data: agents = [] } = useQuery<any[]>({
+    queryKey: ['agents'],
+    queryFn: async () => (await api.get('/users/agents')).data,
+    enabled: isStaff,
+  });
+
+  const tickets: any[] = useMemo(() => {
+    let t = data?.data ?? [];
+    // Client-side multi-value filter (server supports single value only)
+    if (statusFilter.length > 1) t = t.filter((x: any) => statusFilter.includes(x.status));
+    if (priorityFilter.length > 1) t = t.filter((x: any) => priorityFilter.includes(x.priority));
+    return t;
+  }, [data, statusFilter, priorityFilter]);
+
+  const total: number = data?.meta?.total ?? 0;
+
+  function toggleSort(field: SortField) {
+    if (sort === field) setDir((d) => (d === 'asc' ? 'desc' : 'asc'));
+    else { setSort(field); setDir('desc'); }
+  }
+
+  function SortIcon({ field }: { field: SortField }) {
+    if (sort !== field) return <span style={{ opacity: 0.3, fontSize: 10 }}>↕</span>;
+    return <span style={{ fontSize: 10 }}>{dir === 'asc' ? '↑' : '↓'}</span>;
+  }
+
+  function toggleAll() {
+    if (selected.size === tickets.length) setSelected(new Set());
+    else setSelected(new Set(tickets.map((t: any) => t.id)));
+  }
+
+  function toggleOne(id: string) {
+    setSelected((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  }
+
+  async function runBulk() {
+    if (!bulkAction || selected.size === 0) return;
+    const ids = Array.from(selected);
+    try {
+      await api.post('/tickets/bulk', { ids, action: bulkAction });
+      qc.invalidateQueries({ queryKey: ['tickets'] });
+      setSelected(new Set());
+      setBulkAction('');
+    } catch (e: any) {
+      alert(e.response?.data?.error?.message ?? 'Bulk action failed');
+    }
+  }
 
   async function pollNow() {
     setPolling(true);
@@ -29,37 +136,22 @@ export default function Tickets() {
     try {
       const res = await api.post('/admin/mail/poll-now');
       const { processed } = res.data;
-      setPollMsg(processed > 0
-        ? `✓ ${processed} new email${processed === 1 ? '' : 's'} imported`
-        : '✓ No new emails');
+      setPollMsg(processed > 0 ? `✓ ${processed} email${processed === 1 ? '' : 's'} imported` : '✓ No new emails');
       if (processed > 0) qc.invalidateQueries({ queryKey: ['tickets'] });
-    } catch {
-      setPollMsg('✗ Poll failed');
-    } finally {
+    } catch { setPollMsg('✗ Poll failed'); }
+    finally {
       setPolling(false);
       setTimeout(() => setPollMsg(null), 4000);
     }
   }
 
-  const { data, isLoading, isError, error } = useQuery({
-    queryKey: ['tickets', status, scope],
-    queryFn: async () => {
-      const params: Record<string, string> = {};
-      if (status) params.status = status;
-      if (scope === 'mine') params.mine = 'true';
-      if (scope === 'unassigned') params.unassigned = 'true';
-      return (await api.get('/tickets', { params })).data;
-    },
-  });
-
-  const isStaff = user?.role !== 'CUSTOMER';
-  const tickets: any[] = data?.data ?? [];
-  const total: number = data?.meta?.total ?? 0;
+  const activeFilterCount = (statusFilter.length > 0 ? 1 : 0) + (priorityFilter.length > 0 ? 1 : 0) + (categoryId ? 1 : 0);
 
   return (
     <div>
+      {/* Header */}
       <div className="page-header">
-        <div className="page-header-left">
+        <div>
           <div className="page-title">Tickets</div>
           {!isLoading && <div className="page-subtitle">{total} ticket{total !== 1 ? 's' : ''}</div>}
         </div>
@@ -67,51 +159,137 @@ export default function Tickets() {
           {user?.role === 'ADMIN' && (
             <>
               {pollMsg && <span style={{ fontSize: 13, color: pollMsg.startsWith('✓') ? '#16a34a' : '#b91c1c' }}>{pollMsg}</span>}
-              <button className="btn btn-secondary" onClick={pollNow} disabled={polling} title="Fetch new emails and create tickets">
-                {polling ? <><span className="spinner" style={{ width: 13, height: 13 }} /> Polling…</> : '↓ Poll inbox'}
+              <button className="btn btn-secondary btn-sm" onClick={pollNow} disabled={polling}>
+                {polling ? <><span className="spinner" style={{ width: 12, height: 12 }} /> Polling…</> : '↓ Poll inbox'}
               </button>
             </>
           )}
-          <Link to="/tickets/new" className="btn btn-primary">
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-              <path d="M5 12h14"/><path d="M12 5v14"/>
-            </svg>
-            New Ticket
-          </Link>
+          <Link to="/tickets/new" className="btn btn-primary btn-sm">+ New Ticket</Link>
         </div>
       </div>
 
-      {/* Filters */}
-      <div className="filter-bar">
+      {/* Filter bar */}
+      <div className="filter-bar" style={{ gap: 8, marginBottom: 12 }}>
+        {/* Search */}
+        <div className="search-input-wrap">
+          <span className="search-icon">🔍</span>
+          <input
+            type="text"
+            placeholder="Search tickets, customers…"
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            style={{ border: 'none', outline: 'none', background: 'transparent', fontSize: 13, padding: '6px 8px 6px 0', width: 200 }}
+          />
+          {search && <button className="btn btn-ghost btn-xs" onClick={() => setSearch('')} style={{ padding: '0 4px' }}>✕</button>}
+        </div>
+
+        {/* Scope tabs */}
         {isStaff && (
           <div className="tab-group">
-            {[
-              { value: '', label: 'All' },
-              { value: 'mine', label: 'Mine' },
-              { value: 'unassigned', label: 'Unassigned' },
-            ].map((t) => (
-              <button
-                key={t.value}
-                type="button"
-                className={`tab-btn${scope === t.value ? ' active' : ''}`}
-                onClick={() => setScope(t.value)}
-              >
+            {[{ value: '', label: 'All' }, { value: 'mine', label: 'Mine' }, { value: 'unassigned', label: 'Unassigned' }].map((t) => (
+              <button key={t.value} type="button" className={`tab-btn${scope === t.value ? ' active' : ''}`} onClick={() => setScope(t.value)}>
                 {t.label}
               </button>
             ))}
           </div>
         )}
-        <select value={status} onChange={(e) => setStatus(e.target.value)} style={{ width: 'auto', minWidth: 150 }}>
-          <option value="">All statuses</option>
-          {STATUS_OPTIONS.filter(Boolean).map((s) => (
-            <option key={s} value={s}>{STATUS_LABELS[s] ?? s}</option>
-          ))}
-        </select>
+
+        {/* Advanced filters toggle */}
+        <button
+          type="button"
+          className={`btn btn-secondary btn-sm${activeFilterCount > 0 ? ' filter-active' : ''}`}
+          onClick={() => setShowFilters((v) => !v)}
+        >
+          Filters {activeFilterCount > 0 && <span className="filter-count">{activeFilterCount}</span>}
+        </button>
+
+        {activeFilterCount > 0 && (
+          <button
+            type="button"
+            className="btn btn-ghost btn-sm"
+            onClick={() => { setStatusFilter([]); setPriorityFilter([]); setCategoryId(''); }}
+          >
+            Clear filters
+          </button>
+        )}
       </div>
+
+      {/* Advanced filters panel */}
+      {showFilters && (
+        <div className="filters-panel">
+          <div className="filters-group">
+            <div className="filters-label">Status</div>
+            <div className="filters-chips">
+              {STATUS_OPTIONS.map((s) => (
+                <button
+                  key={s}
+                  type="button"
+                  className={`filter-chip${statusFilter.includes(s) ? ' active' : ''}`}
+                  onClick={() => setStatusFilter((prev) => prev.includes(s) ? prev.filter((x) => x !== s) : [...prev, s])}
+                >
+                  {STATUS_LABELS[s] ?? s}
+                </button>
+              ))}
+            </div>
+          </div>
+          <div className="filters-group">
+            <div className="filters-label">Priority</div>
+            <div className="filters-chips">
+              {PRIORITY_OPTIONS.map((p) => (
+                <button
+                  key={p}
+                  type="button"
+                  className={`filter-chip priority-chip ${p}${priorityFilter.includes(p) ? ' active' : ''}`}
+                  onClick={() => setPriorityFilter((prev) => prev.includes(p) ? prev.filter((x) => x !== p) : [...prev, p])}
+                >
+                  {PRIORITY_LABELS[p] ?? p}
+                </button>
+              ))}
+            </div>
+          </div>
+          {isStaff && categories.length > 0 && (
+            <div className="filters-group">
+              <div className="filters-label">Category</div>
+              <div className="filters-chips">
+                {categories.map((c: any) => (
+                  <button
+                    key={c.id}
+                    type="button"
+                    className={`filter-chip${categoryId === c.id ? ' active' : ''}`}
+                    onClick={() => setCategoryId((prev) => prev === c.id ? '' : c.id)}
+                  >
+                    {c.name}
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Bulk action bar */}
+      {selected.size > 0 && (
+        <div className="bulk-bar">
+          <span style={{ fontSize: 13, fontWeight: 500 }}>{selected.size} selected</span>
+          <select
+            value={bulkAction}
+            onChange={(e) => setBulkAction(e.target.value)}
+            style={{ width: 'auto', fontSize: 13 }}
+          >
+            <option value="">Choose action…</option>
+            <option value="resolve">Mark Resolved</option>
+            <option value="close">Close</option>
+            <option value="priority">Set Priority…</option>
+            {user?.role === 'ADMIN' && <option value="delete">Delete</option>}
+          </select>
+          <button className="btn btn-primary btn-sm" onClick={runBulk} disabled={!bulkAction}>Apply</button>
+          <button className="btn btn-ghost btn-sm" onClick={() => setSelected(new Set())}>Deselect all</button>
+        </div>
+      )}
 
       {/* Table */}
       {isLoading ? (
-        <div style={{ padding: '40px', textAlign: 'center', color: 'var(--text-3)', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 10 }}>
+        <div style={{ padding: 40, textAlign: 'center', color: 'var(--text-3)', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 10 }}>
           <span className="spinner" /> Loading tickets…
         </div>
       ) : isError ? (
@@ -124,49 +302,81 @@ export default function Tickets() {
           <table>
             <thead>
               <tr>
-                <th>Reference</th>
+                {isStaff && (
+                  <th style={{ width: 36 }}>
+                    <input type="checkbox" checked={selected.size === tickets.length && tickets.length > 0} onChange={toggleAll} />
+                  </th>
+                )}
+                <th className="sortable" onClick={() => toggleSort('reference')}>
+                  Ticket No. <SortIcon field="reference" />
+                </th>
                 <th>Subject</th>
-                <th>Status</th>
-                <th>Priority</th>
+                <th className="sortable" onClick={() => toggleSort('status')}>
+                  Status <SortIcon field="status" />
+                </th>
+                <th className="sortable" onClick={() => toggleSort('priority')}>
+                  Priority <SortIcon field="priority" />
+                </th>
+                <th>Category</th>
                 <th>Customer</th>
                 {isStaff && <th>Assignee</th>}
-                <th>Updated</th>
+                <th className="sortable" onClick={() => toggleSort('createdAt')}>
+                  Age <SortIcon field="createdAt" />
+                </th>
+                <th className="sortable" onClick={() => toggleSort('updatedAt')}>
+                  Updated <SortIcon field="updatedAt" />
+                </th>
               </tr>
             </thead>
             <tbody>
               {tickets.length === 0 ? (
                 <tr>
-                  <td colSpan={isStaff ? 7 : 6}>
+                  <td colSpan={isStaff ? 10 : 8}>
                     <div className="empty-state">
                       <div className="empty-state-icon">🎫</div>
                       <div className="empty-state-title">No tickets found</div>
-                      <div className="empty-state-body">
-                        {status ? 'Try changing the status filter.' : 'No tickets match your current view.'}
-                      </div>
+                      <div className="empty-state-body">Try adjusting your filters.</div>
                     </div>
                   </td>
                 </tr>
               ) : (
                 tickets.map((t: any) => (
-                  <tr key={t.id}>
+                  <tr key={t.id} className={selected.has(t.id) ? 'row-selected' : ''}>
+                    {isStaff && (
+                      <td style={{ width: 36 }}>
+                        <input type="checkbox" checked={selected.has(t.id)} onChange={() => toggleOne(t.id)} />
+                      </td>
+                    )}
                     <td>
-                      <Link to={`/tickets/${t.id}`} className="ticket-ref" style={{ fontSize: 12, fontFamily: 'monospace' }}>
+                      <Link to={`/tickets/${t.id}`} className="ticket-num-link">
                         {t.reference}
                       </Link>
+                      {t.slaBreached && <span className="sla-breached-dot" title="SLA Breached" />}
                     </td>
-                    <td>
-                      <Link to={`/tickets/${t.id}`} style={{ color: 'var(--text)', fontWeight: 500 }}>
+                    <td style={{ maxWidth: 280 }}>
+                      <Link to={`/tickets/${t.id}`} style={{ color: 'var(--text)', fontWeight: 500 }} className="truncate" title={t.subject}>
                         {t.subject}
                       </Link>
+                      {t.tags?.length > 0 && (
+                        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 3, marginTop: 3 }}>
+                          {t.tags.slice(0, 3).map((tt: any) => (
+                            <span key={tt.tagId} className="tag-chip" style={{ background: tt.tag.color + '22', color: tt.tag.color, borderColor: tt.tag.color + '44' }}>
+                              {tt.tag.name}
+                            </span>
+                          ))}
+                        </div>
+                      )}
                     </td>
+                    <td><span className={`badge ${t.status}`}>{STATUS_LABELS[t.status] ?? t.status}</span></td>
                     <td>
-                      <span className={`badge ${t.status}`}>{STATUS_LABELS[t.status] ?? t.status}</span>
-                    </td>
-                    <td>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
                         <span className={`priority-dot ${t.priority}`} />
                         <span className={`badge ${t.priority}`}>{PRIORITY_LABELS[t.priority] ?? t.priority}</span>
                       </div>
+                    </td>
+                    <td style={{ fontSize: 12.5, color: 'var(--text-2)' }}>
+                      {t.category?.name ?? <span className="muted">—</span>}
+                      {t.subcategory && <span style={{ color: 'var(--text-3)' }}> / {t.subcategory.name}</span>}
                     </td>
                     <td>
                       {t.createdBy?.fullName ? (
@@ -183,12 +393,11 @@ export default function Tickets() {
                             <Avatar name={t.assignedTo.fullName} />
                             <span style={{ fontSize: 13 }}>{t.assignedTo.fullName}</span>
                           </div>
-                        ) : (
-                          <span className="muted">Unassigned</span>
-                        )}
+                        ) : <span className="muted">Unassigned</span>}
                       </td>
                     )}
-                    <td className="muted">{relativeTime(t.updatedAt)}</td>
+                    <td><AgeBadge createdAt={t.createdAt} /></td>
+                    <td className="muted" style={{ fontSize: 12 }}>{relativeTime(t.updatedAt)}</td>
                   </tr>
                 ))
               )}

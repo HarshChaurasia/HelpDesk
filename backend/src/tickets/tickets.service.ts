@@ -12,6 +12,7 @@ import {
   MessageType,
   Channel,
   EventType,
+  TimeLogType,
   Role,
 } from '@prisma/client';
 import * as argon2 from 'argon2';
@@ -25,6 +26,7 @@ import {
   CreateTicketDto,
   UpdateTicketDto,
   MessageDto,
+  TimeLogDto,
 } from './dto';
 
 const DEFAULT_RESPONSE_MINS: Record<string, number> = {
@@ -122,6 +124,13 @@ export class TicketsService {
         priority,
         channel: Channel.WEB,
         categoryId: dto.categoryId ?? null,
+        subcategoryId: dto.subcategoryId ?? null,
+        deliveryDate: dto.deliveryDate ? new Date(dto.deliveryDate) : null,
+        systemProduct: dto.systemProduct ?? null,
+        systemModule: dto.systemModule ?? null,
+        systemVersion: dto.systemVersion ?? null,
+        systemBrowser: dto.systemBrowser ?? null,
+        systemOs: dto.systemOs ?? null,
         createdById: user.id,
         ...sla,
         messages: {
@@ -133,6 +142,12 @@ export class TicketsService {
           },
         },
         watchers: { create: { userId: user.id } },
+        ...(dto.assigneeIds?.length
+          ? {
+              assignedToId: dto.assigneeIds[0],
+              assignees: { create: dto.assigneeIds.map((id) => ({ userId: id })) },
+            }
+          : {}),
       },
     });
     await this.writeEvent(ticket.id, EventType.CREATED, user.id);
@@ -304,30 +319,56 @@ export class TicketsService {
       if (q.unassigned === 'true') where.assignedToId = null;
       if (q.assignedToId) where.assignedToId = q.assignedToId;
     }
-    if (q.status) where.status = q.status;
-    if (q.priority) where.priority = q.priority;
+    if (q.status) {
+      where.status = Array.isArray(q.status)
+        ? { in: q.status }
+        : q.status;
+    }
+    if (q.priority) {
+      where.priority = Array.isArray(q.priority)
+        ? { in: q.priority }
+        : q.priority;
+    }
     if (q.categoryId) where.categoryId = q.categoryId;
+    if (q.subcategoryId) where.subcategoryId = q.subcategoryId;
+    if (q.tagId) where.tags = { some: { tagId: q.tagId } };
+    if (q.createdAfter) where.createdAt = { ...where.createdAt, gte: new Date(q.createdAfter) };
+    if (q.createdBefore) where.createdAt = { ...where.createdAt, lte: new Date(q.createdBefore) };
+    if (q.slaBreached === 'true') where.slaBreached = true;
     if (q.q) {
       where.AND = [
         {
           OR: [
             { subject: { contains: q.q, mode: 'insensitive' } },
             { reference: { contains: q.q, mode: 'insensitive' } },
+            { createdBy: { fullName: { contains: q.q, mode: 'insensitive' } } },
           ],
         },
       ];
     }
     const page = Math.max(1, parseInt(q.page ?? '1', 10));
-    const limit = Math.min(100, parseInt(q.limit ?? '20', 10));
+    const limit = Math.min(100, parseInt(q.limit ?? '25', 10));
+    const sortField = q.sort ?? 'createdAt';
+    const sortDir = q.dir === 'asc' ? 'asc' : 'desc';
+    const allowedSorts: Record<string, any> = {
+      createdAt: { createdAt: sortDir },
+      updatedAt: { updatedAt: sortDir },
+      priority: { priority: sortDir },
+      status: { status: sortDir },
+      reference: { reference: sortDir },
+    };
+    const orderBy = allowedSorts[sortField] ?? { createdAt: 'desc' };
     const [data, total] = await this.prisma.$transaction([
       this.prisma.ticket.findMany({
         where,
         include: {
-          category: true,
+          category: { select: { id: true, name: true } },
+          subcategory: { select: { id: true, name: true } },
           assignedTo: { select: { id: true, fullName: true } },
           createdBy: { select: { id: true, fullName: true, email: true } },
+          tags: { include: { tag: true } },
         },
-        orderBy: { createdAt: 'desc' },
+        orderBy,
         skip: (page - 1) * limit,
         take: limit,
       }),
@@ -342,8 +383,9 @@ export class TicketsService {
       where: { id },
       include: {
         category: true,
+        subcategory: true,
         assignedTo: { select: { id: true, fullName: true, email: true } },
-        createdBy: { select: { id: true, fullName: true, email: true } },
+        createdBy: { select: { id: true, fullName: true, email: true, phone: true, organization: true } },
         assignees: { include: { user: { select: { id: true, fullName: true, email: true, role: true } } } },
         watchers: { include: { user: { select: { id: true, fullName: true } } } },
         attachments: { orderBy: { createdAt: 'asc' } },
@@ -358,6 +400,11 @@ export class TicketsService {
         events: {
           orderBy: { createdAt: 'asc' },
           include: { actor: { select: { id: true, fullName: true } } },
+        },
+        tags: { include: { tag: true } },
+        timeLogs: {
+          orderBy: { loggedAt: 'asc' },
+          include: { user: { select: { id: true, fullName: true } } },
         },
       },
     });
@@ -381,7 +428,72 @@ export class TicketsService {
     if ('categoryId' in dto && dto.categoryId !== ticket.categoryId) {
       await this.writeEvent(id, EventType.CATEGORY_CHANGED, user.id, ticket.categoryId ?? undefined, dto.categoryId ?? undefined);
     }
-    return this.prisma.ticket.update({ where: { id }, data: dto });
+    if ('subcategoryId' in dto && dto.subcategoryId !== ticket.subcategoryId) {
+      await this.writeEvent(id, EventType.SUBCATEGORY_CHANGED, user.id, ticket.subcategoryId ?? undefined, dto.subcategoryId ?? undefined);
+    }
+    if ('deliveryDate' in dto && dto.deliveryDate) {
+      await this.writeEvent(id, EventType.DELIVERY_DATE_SET, user.id, undefined, dto.deliveryDate);
+    }
+    const data: any = { ...dto };
+    if (dto.deliveryDate) data.deliveryDate = new Date(dto.deliveryDate);
+    return this.prisma.ticket.update({ where: { id }, data });
+  }
+
+  async toggleTag(ticketId: string, tagId: string, user: AuthUser) {
+    await this.assertAccess(ticketId, user);
+    const existing = await this.prisma.ticketTag.findUnique({
+      where: { ticketId_tagId: { ticketId, tagId } },
+    });
+    if (existing) {
+      await this.prisma.ticketTag.delete({ where: { ticketId_tagId: { ticketId, tagId } } });
+      const tag = await this.prisma.tag.findUnique({ where: { id: tagId } });
+      await this.writeEvent(ticketId, EventType.TAG_REMOVED, user.id, undefined, tag?.name);
+      return { toggled: 'removed', tagId };
+    }
+    await this.prisma.ticketTag.create({ data: { ticketId, tagId } });
+    const tag = await this.prisma.tag.findUnique({ where: { id: tagId } });
+    await this.writeEvent(ticketId, EventType.TAG_ADDED, user.id, undefined, tag?.name);
+    return { toggled: 'added', tagId };
+  }
+
+  async addTimeLog(ticketId: string, dto: TimeLogDto, user: AuthUser) {
+    await this.assertAccess(ticketId, user);
+    const log = await this.prisma.ticketTimeLog.create({
+      data: {
+        ticketId,
+        userId: user.id,
+        type: dto.type,
+        hours: dto.hours,
+        note: dto.note ?? null,
+      },
+      include: { user: { select: { id: true, fullName: true } } },
+    });
+    await this.writeEvent(ticketId, EventType.TIME_LOGGED, user.id, undefined, `${dto.hours}h ${dto.type}`);
+    return log;
+  }
+
+  async bulkAction(dto: { ids: string[]; action: string; payload?: any }, user: AuthUser) {
+    const results: any[] = [];
+    for (const id of dto.ids) {
+      try {
+        if (dto.action === 'close') {
+          await this.changeStatus(id, TicketStatus.CLOSED, user);
+        } else if (dto.action === 'resolve') {
+          await this.changeStatus(id, TicketStatus.RESOLVED, user);
+        } else if (dto.action === 'assign' && dto.payload?.userId) {
+          await this.assign(id, [dto.payload.userId], user);
+        } else if (dto.action === 'priority' && dto.payload?.priority) {
+          await this.update(id, { priority: dto.payload.priority }, user);
+        } else if (dto.action === 'delete') {
+          if (user.role !== Role.ADMIN) throw new ForbiddenException('Admins only');
+          await this.prisma.ticket.delete({ where: { id } });
+        }
+        results.push({ id, ok: true });
+      } catch (e: any) {
+        results.push({ id, ok: false, error: e.message });
+      }
+    }
+    return { results };
   }
 
   async changeStatus(id: string, to: TicketStatus, user: AuthUser) {

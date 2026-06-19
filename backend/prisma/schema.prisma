@@ -53,11 +53,23 @@ enum EventType {
   ASSIGNED
   PRIORITY_CHANGED
   CATEGORY_CHANGED
+  SUBCATEGORY_CHANGED
+  TAG_ADDED
+  TAG_REMOVED
   WATCHER_ADDED
   WATCHER_REMOVED
   MESSAGE_ADDED
   REOPENED
   CLOSED
+  TIME_LOGGED
+  DELIVERY_DATE_SET
+}
+
+enum TimeLogType {
+  INVESTIGATION
+  DEVELOPMENT
+  TESTING
+  OTHER
 }
 
 model User {
@@ -65,6 +77,8 @@ model User {
   email        String           @unique
   passwordHash String?
   fullName     String
+  phone        String?
+  organization String?
   role         Role             @default(CUSTOMER)
   isActive     Boolean          @default(true)
   notifPref    NotifChannelPref @default(BOTH)
@@ -81,6 +95,7 @@ model User {
   refreshTokens   RefreshToken[]
   resetTokens     PasswordResetToken[]
   reactions       Reaction[]       @relation("UserReactions")
+  timeLogs        TicketTimeLog[]  @relation("TimeLogUser")
 }
 
 model SlaPolicy {
@@ -94,13 +109,59 @@ model SlaPolicy {
 }
 
 model Category {
-  id          String     @id @default(uuid())
-  name        String     @unique
-  description String?
-  slaPolicyId String?
-  slaPolicy   SlaPolicy? @relation(fields: [slaPolicyId], references: [id])
-  isActive    Boolean    @default(true)
-  tickets     Ticket[]
+  id            String        @id @default(uuid())
+  name          String        @unique
+  description   String?
+  slaPolicyId   String?
+  slaPolicy     SlaPolicy?    @relation(fields: [slaPolicyId], references: [id])
+  isActive      Boolean       @default(true)
+  tickets       Ticket[]
+  subcategories Subcategory[]
+}
+
+model Subcategory {
+  id         String   @id @default(uuid())
+  name       String
+  categoryId String
+  category   Category @relation(fields: [categoryId], references: [id], onDelete: Cascade)
+  isActive   Boolean  @default(true)
+  tickets    Ticket[]
+  createdAt  DateTime @default(now())
+
+  @@unique([categoryId, name])
+  @@index([categoryId])
+}
+
+model Tag {
+  id        String      @id @default(uuid())
+  name      String      @unique
+  color     String      @default("#6366f1")
+  tickets   TicketTag[]
+  createdAt DateTime    @default(now())
+}
+
+model TicketTag {
+  ticketId String
+  ticket   Ticket @relation(fields: [ticketId], references: [id], onDelete: Cascade)
+  tagId    String
+  tag      Tag    @relation(fields: [tagId], references: [id], onDelete: Cascade)
+
+  @@id([ticketId, tagId])
+  @@index([ticketId])
+}
+
+model TicketTimeLog {
+  id        String      @id @default(uuid())
+  ticketId  String
+  ticket    Ticket      @relation(fields: [ticketId], references: [id], onDelete: Cascade)
+  userId    String
+  user      User        @relation("TimeLogUser", fields: [userId], references: [id])
+  type      TimeLogType
+  hours     Float
+  note      String?
+  loggedAt  DateTime    @default(now())
+
+  @@index([ticketId])
 }
 
 model Ticket {
@@ -112,10 +173,23 @@ model Ticket {
   channel                Channel      @default(WEB)
   categoryId             String?
   category               Category?    @relation(fields: [categoryId], references: [id])
+  subcategoryId          String?
+  subcategory            Subcategory? @relation(fields: [subcategoryId], references: [id])
   createdById            String
   createdBy              User         @relation("CreatedBy", fields: [createdById], references: [id])
   assignedToId           String?
   assignedTo             User?        @relation("AssignedTo", fields: [assignedToId], references: [id])
+  deliveryDate           DateTime?
+  resolutionSummary      String?
+  rootCause              String?
+  correctiveAction       String?
+  preventiveAction       String?
+  systemProduct          String?
+  systemModule           String?
+  systemVersion          String?
+  systemBrowser          String?
+  systemOs               String?
+  noAutoClose            Boolean      @default(false)
   firstResponseAt        DateTime?
   resolvedAt             DateTime?
   closedAt               DateTime?
@@ -126,16 +200,19 @@ model Ticket {
   createdAt              DateTime     @default(now())
   updatedAt              DateTime     @updatedAt
 
-  watchers     TicketWatcher[]
-  assignees    TicketAssignee[]
-  messages     Message[]
-  events       TicketEvent[]
-  attachments  Attachment[]
+  watchers      TicketWatcher[]
+  assignees     TicketAssignee[]
+  messages      Message[]
+  events        TicketEvent[]
+  attachments   Attachment[]
   notifications Notification[]
+  tags          TicketTag[]
+  timeLogs      TicketTimeLog[]
 
   @@index([status])
   @@index([assignedToId, status])
   @@index([categoryId])
+  @@index([subcategoryId])
   @@index([createdById])
   @@index([createdAt])
 }
