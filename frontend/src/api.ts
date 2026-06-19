@@ -1,5 +1,5 @@
 import axios from 'axios';
-import { getStoredRefreshToken, setStoredRefreshToken } from './auth';
+import { getStoredRefreshToken, setStoredRefreshToken } from './token-store';
 
 export const api = axios.create({
   baseURL: (import.meta.env.VITE_API_URL ?? '').replace(/\/+$/, '') + '/api/v1',

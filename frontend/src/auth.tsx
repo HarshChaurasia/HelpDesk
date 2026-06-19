@@ -6,14 +6,7 @@ import {
   ReactNode,
 } from 'react';
 import { api, setToken } from './api';
-
-const RT_KEY = 'hd_rt';
-
-export function getStoredRefreshToken() { return localStorage.getItem(RT_KEY); }
-export function setStoredRefreshToken(t: string | null) {
-  if (t) localStorage.setItem(RT_KEY, t);
-  else localStorage.removeItem(RT_KEY);
-}
+import { getStoredRefreshToken, setStoredRefreshToken } from './token-store';
 
 export interface User {
   id: string;
