@@ -57,8 +57,8 @@ export class MailerService {
     }
   }
 
-  async testConnection(to: string): Promise<{ ok: boolean; message: string }> {
-    const cfg = this.getConfig();
+  async testConnection(to: string, overrideCfg?: SmtpConfig): Promise<{ ok: boolean; message: string }> {
+    const cfg = overrideCfg ?? this.getConfig();
     const transport = this.createTransport(cfg);
     try {
       await transport.verify();

@@ -67,7 +67,14 @@ function EmailSettings() {
     setTesting('smtp');
     setSmtpTest(null);
     try {
-      const res = await api.post('/admin/settings/test-smtp');
+      const res = await api.post('/admin/settings/test-smtp', {
+        smtpHost:   f('smtpHost')   || undefined,
+        smtpPort:   f('smtpPort')   || undefined,
+        smtpSecure: f('smtpSecure') || undefined,
+        smtpUser:   f('smtpUser')   || undefined,
+        smtpPass:   f('smtpPass')   || undefined,
+        mailFrom:   f('mailFrom')   || undefined,
+      });
       setSmtpTest(res.data);
     } catch (e: any) {
       setSmtpTest({ ok: false, message: e.response?.data?.error?.message ?? 'Request failed' });
@@ -80,7 +87,13 @@ function EmailSettings() {
     setTesting('imap');
     setImapTest(null);
     try {
-      const res = await api.post('/admin/settings/test-imap');
+      const res = await api.post('/admin/settings/test-imap', {
+        imapHost:   f('imapHost')   || undefined,
+        imapPort:   f('imapPort')   || undefined,
+        imapSecure: f('imapSecure') ?? undefined,
+        imapUser:   f('imapUser')   || undefined,
+        imapPass:   f('imapPass')   || undefined,
+      });
       setImapTest(res.data);
     } catch (e: any) {
       setImapTest({ ok: false, message: e.response?.data?.error?.message ?? 'Request failed' });

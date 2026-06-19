@@ -52,6 +52,7 @@ enum EventType {
   STATUS_CHANGED
   ASSIGNED
   PRIORITY_CHANGED
+  CATEGORY_CHANGED
   WATCHER_ADDED
   WATCHER_REMOVED
   MESSAGE_ADDED
@@ -70,14 +71,16 @@ model User {
   createdAt    DateTime         @default(now())
   updatedAt    DateTime         @updatedAt
 
-  createdTickets  Ticket[]        @relation("CreatedBy")
-  assignedTickets Ticket[]        @relation("AssignedTo")
+  createdTickets  Ticket[]         @relation("CreatedBy")
+  assignedTickets Ticket[]         @relation("AssignedTo")
+  ticketAssignees TicketAssignee[] @relation("TicketAssignees")
   watching        TicketWatcher[]
   messages        Message[]
   events          TicketEvent[]
   notifications   Notification[]
   refreshTokens   RefreshToken[]
   resetTokens     PasswordResetToken[]
+  reactions       Reaction[]       @relation("UserReactions")
 }
 
 model SlaPolicy {
@@ -124,6 +127,7 @@ model Ticket {
   updatedAt              DateTime     @updatedAt
 
   watchers     TicketWatcher[]
+  assignees    TicketAssignee[]
   messages     Message[]
   events       TicketEvent[]
   attachments  Attachment[]
@@ -146,6 +150,17 @@ model TicketWatcher {
   @@id([ticketId, userId])
 }
 
+model TicketAssignee {
+  ticketId  String
+  ticket    Ticket   @relation(fields: [ticketId], references: [id], onDelete: Cascade)
+  userId    String
+  user      User     @relation("TicketAssignees", fields: [userId], references: [id], onDelete: Cascade)
+  createdAt DateTime @default(now())
+
+  @@id([ticketId, userId])
+  @@index([ticketId])
+}
+
 model Message {
   id              String      @id @default(uuid())
   ticketId        String
@@ -156,10 +171,26 @@ model Message {
   body            String
   channel         Channel     @default(WEB)
   sourceMessageId String?
+  editedAt        DateTime?
+  deletedAt       DateTime?
   createdAt       DateTime    @default(now())
   attachments     Attachment[]
+  reactions       Reaction[]
 
   @@index([ticketId, createdAt])
+}
+
+model Reaction {
+  id        String   @id @default(uuid())
+  messageId String
+  message   Message  @relation(fields: [messageId], references: [id], onDelete: Cascade)
+  userId    String
+  user      User     @relation("UserReactions", fields: [userId], references: [id], onDelete: Cascade)
+  emoji     String
+  createdAt DateTime @default(now())
+
+  @@unique([messageId, userId, emoji])
+  @@index([messageId])
 }
 
 model Attachment {

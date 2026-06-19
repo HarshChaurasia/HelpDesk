@@ -2,6 +2,9 @@ import { useState } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
 import { api } from '../api';
+import { useAuth } from '../auth';
+import RichTextEditor from '../components/RichTextEditor';
+import UserCombobox, { UserOption } from '../components/UserCombobox';
 
 const PRIORITIES = [
   { value: 'LOW',    label: 'Low',    desc: 'Non-urgent, general questions' },
@@ -12,10 +15,14 @@ const PRIORITIES = [
 
 export default function NewTicket() {
   const nav = useNavigate();
+  const { user } = useAuth();
+  const isStaff = user?.role !== 'CUSTOMER';
+
   const [subject, setSubject] = useState('');
   const [description, setDescription] = useState('');
   const [categoryId, setCategoryId] = useState('');
   const [priority, setPriority] = useState('MEDIUM');
+  const [assignees, setAssignees] = useState<UserOption[]>([]);
   const [err, setErr] = useState('');
   const [submitting, setSubmitting] = useState(false);
 
@@ -24,8 +31,16 @@ export default function NewTicket() {
     queryFn: async () => (await api.get('/categories')).data,
   });
 
+  const { data: agents = [] } = useQuery<UserOption[]>({
+    queryKey: ['agents'],
+    queryFn: async () => (await api.get('/users/agents')).data,
+    enabled: isStaff,
+  });
+
   async function submit(e: React.FormEvent) {
     e.preventDefault();
+    const descText = description.replace(/<[^>]*>/g, '').trim();
+    if (!descText) { setErr('Description is required.'); return; }
     setErr('');
     setSubmitting(true);
     try {
@@ -34,6 +49,7 @@ export default function NewTicket() {
         description,
         priority,
         categoryId: categoryId || undefined,
+        assigneeIds: assignees.map((a) => a.id),
       });
       nav(`/tickets/${data.id}`);
     } catch (e: any) {
@@ -43,7 +59,7 @@ export default function NewTicket() {
   }
 
   return (
-    <div style={{ maxWidth: 640 }}>
+    <div style={{ maxWidth: 700 }}>
       <div className="breadcrumb">
         <Link to="/tickets">Tickets</Link>
         <span className="breadcrumb-sep">›</span>
@@ -72,12 +88,11 @@ export default function NewTicket() {
 
           <div className="form-group">
             <label className="form-label">Description <span style={{ color: '#ef4444' }}>*</span></label>
-            <textarea
-              placeholder="Describe the problem in detail. Include any error messages, steps to reproduce, and what you expected to happen."
-              rows={6}
+            <RichTextEditor
               value={description}
-              onChange={(e) => setDescription(e.target.value)}
-              required
+              onChange={setDescription}
+              placeholder="Describe the problem in detail. Include any error messages, steps to reproduce, and what you expected to happen."
+              minHeight={160}
             />
           </div>
 
@@ -101,6 +116,20 @@ export default function NewTicket() {
               </select>
             </div>
           </div>
+
+          {isStaff && (
+            <div className="form-group">
+              <label className="form-label">Assign to</label>
+              <UserCombobox
+                users={agents}
+                selected={assignees}
+                onChange={setAssignees}
+                placeholder="Search agents…"
+                multi={true}
+              />
+              <span className="form-hint">Optional. You can assign later from the ticket page.</span>
+            </div>
+          )}
 
           {err && <div className="alert alert-error">{err}</div>}
 

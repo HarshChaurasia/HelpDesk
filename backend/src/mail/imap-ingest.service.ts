@@ -151,7 +151,7 @@ export class ImapIngestService {
     return result;
   }
 
-  private makeClient(cfg: ReturnType<typeof this.getImapConfig>) {
+  private makeClient(cfg: { host: string; port: number; secure: boolean; user: string; pass: string }) {
     const client = new ImapFlow({
       host: cfg.host,
       port: cfg.port,
@@ -169,8 +169,8 @@ export class ImapIngestService {
     return client;
   }
 
-  async testConnection(): Promise<{ ok: boolean; messageCount?: number; message: string }> {
-    const cfg = this.getImapConfig();
+  async testConnection(overrideCfg?: { host: string; port: number; secure: boolean; user: string; pass: string }): Promise<{ ok: boolean; messageCount?: number; message: string }> {
+    const cfg = overrideCfg ?? this.getImapConfig();
     if (!cfg.host || !cfg.user) {
       return { ok: false, message: 'IMAP host or user not configured' };
     }

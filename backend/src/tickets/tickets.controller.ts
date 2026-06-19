@@ -23,6 +23,8 @@ import {
   StatusDto,
   AssignDto,
   MessageDto,
+  EditMessageDto,
+  ReactionDto,
   WatcherDto,
 } from './dto';
 import { ApiTags, ApiBearerAuth } from '@nestjs/swagger';
@@ -102,7 +104,8 @@ export class TicketsController {
     @Body() dto: AssignDto,
     @CurrentUser() user: AuthUser,
   ) {
-    return this.tickets.assign(id, dto.assignedToId, user);
+    const ids = dto.userIds ?? (dto.assignedToId ? [dto.assignedToId] : []);
+    return this.tickets.assign(id, ids, user);
   }
 
   @Post(':id/messages')
@@ -112,6 +115,35 @@ export class TicketsController {
     @CurrentUser() user: AuthUser,
   ) {
     return this.tickets.addMessage(id, dto, user);
+  }
+
+  @Patch(':id/messages/:msgId')
+  editMessage(
+    @Param('id') id: string,
+    @Param('msgId') msgId: string,
+    @Body() dto: EditMessageDto,
+    @CurrentUser() user: AuthUser,
+  ) {
+    return this.tickets.editMessage(id, msgId, dto.body, user);
+  }
+
+  @Delete(':id/messages/:msgId')
+  deleteMessage(
+    @Param('id') id: string,
+    @Param('msgId') msgId: string,
+    @CurrentUser() user: AuthUser,
+  ) {
+    return this.tickets.deleteMessage(id, msgId, user);
+  }
+
+  @Post(':id/messages/:msgId/reactions')
+  toggleReaction(
+    @Param('id') id: string,
+    @Param('msgId') msgId: string,
+    @Body() dto: ReactionDto,
+    @CurrentUser() user: AuthUser,
+  ) {
+    return this.tickets.toggleReaction(id, msgId, dto.emoji, user);
   }
 
   @Get(':id/events')

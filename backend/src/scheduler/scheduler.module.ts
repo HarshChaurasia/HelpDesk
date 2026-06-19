@@ -1,13 +1,14 @@
 import { Module } from '@nestjs/common';
 import { SchedulerService } from './scheduler.service';
 import { AdminController } from './admin.controller';
+import { SettingsBootstrapService } from './settings-bootstrap.service';
 import { MailModule } from '../mail/mail.module';
 import { PrismaModule } from '../prisma/prisma.module';
 
 @Module({
   imports: [MailModule, PrismaModule],
   controllers: [AdminController],
-  providers: [SchedulerService],
+  providers: [SchedulerService, SettingsBootstrapService],
   exports: [],
 })
 export class SchedulerModule {}

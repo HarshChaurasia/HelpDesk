@@ -4,7 +4,7 @@ import { IsBoolean, IsInt, IsOptional, IsString, Min } from 'class-validator';
 import { Type } from 'class-transformer';
 import { Roles, CurrentUser, AuthUser } from '../common/decorators';
 import { ImapIngestService } from '../mail/imap-ingest.service';
-import { MailerService } from '../mail/mailer.service';
+import { MailerService, SmtpConfig } from '../mail/mailer.service';
 import { PrismaService } from '../prisma/prisma.service';
 
 const MASK = '***';
@@ -42,6 +42,23 @@ class UpdateSettingsDto {
   @IsOptional() @IsString() smtpUser?: string;
   @IsOptional() @IsString() smtpPass?: string;   // send "***" to leave unchanged
   @IsOptional() @IsString() mailFrom?: string;
+}
+
+class TestSmtpDto {
+  @IsOptional() @IsString() smtpHost?: string;
+  @IsOptional() @IsInt() @Min(1) @Type(() => Number) smtpPort?: number;
+  @IsOptional() @IsBoolean() @Type(() => Boolean) smtpSecure?: boolean;
+  @IsOptional() @IsString() smtpUser?: string;
+  @IsOptional() @IsString() smtpPass?: string;
+  @IsOptional() @IsString() mailFrom?: string;
+}
+
+class TestImapDto {
+  @IsOptional() @IsString() imapHost?: string;
+  @IsOptional() @IsInt() @Min(1) @Type(() => Number) imapPort?: number;
+  @IsOptional() @IsBoolean() @Type(() => Boolean) imapSecure?: boolean;
+  @IsOptional() @IsString() imapUser?: string;
+  @IsOptional() @IsString() imapPass?: string;
 }
 
 @ApiTags('admin')
@@ -124,13 +141,28 @@ export class AdminController {
 
   @Roles('ADMIN')
   @Post('settings/test-imap')
-  testImap() {
-    return this.imap.testConnection();
+  testImap(@Body() dto: TestImapDto) {
+    const cfg = dto.imapHost ? {
+      host:   dto.imapHost,
+      port:   dto.imapPort  ?? 993,
+      secure: dto.imapSecure ?? true,
+      user:   dto.imapUser  ?? '',
+      pass:   dto.imapPass === MASK ? (process.env.IMAP_PASS ?? '') : (dto.imapPass ?? ''),
+    } : undefined;
+    return this.imap.testConnection(cfg);
   }
 
   @Roles('ADMIN')
   @Post('settings/test-smtp')
-  testSmtp(@CurrentUser() user: AuthUser) {
-    return this.mailer.testConnection(user.email);
+  testSmtp(@CurrentUser() user: AuthUser, @Body() dto: TestSmtpDto) {
+    const cfg: SmtpConfig | undefined = dto.smtpHost ? {
+      host:   dto.smtpHost,
+      port:   dto.smtpPort   ?? 587,
+      secure: dto.smtpSecure ?? false,
+      user:   dto.smtpUser   ?? undefined,
+      pass:   dto.smtpPass === MASK ? (process.env.SMTP_PASS ?? undefined) : (dto.smtpPass ?? undefined),
+      from:   dto.mailFrom   ?? process.env.MAIL_FROM ?? 'Help Desk <support@helpdesk.local>',
+    } : undefined;
+    return this.mailer.testConnection(user.email, cfg);
   }
 }

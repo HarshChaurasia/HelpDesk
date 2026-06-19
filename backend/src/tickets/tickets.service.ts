@@ -16,6 +16,8 @@ import {
 } from '@prisma/client';
 import * as argon2 from 'argon2';
 import { randomBytes } from 'crypto';
+import { unlinkSync } from 'fs';
+import { join } from 'path';
 import { PrismaService } from '../prisma/prisma.service';
 import { AuthUser } from '../common/decorators';
 import { canTransition, allowedNext } from './state-machine';
@@ -342,11 +344,16 @@ export class TicketsService {
         category: true,
         assignedTo: { select: { id: true, fullName: true, email: true } },
         createdBy: { select: { id: true, fullName: true, email: true } },
+        assignees: { include: { user: { select: { id: true, fullName: true, email: true, role: true } } } },
         watchers: { include: { user: { select: { id: true, fullName: true } } } },
-        attachments: true,
+        attachments: { orderBy: { createdAt: 'asc' } },
         messages: {
           orderBy: { createdAt: 'asc' },
-          include: { author: { select: { id: true, fullName: true, role: true } } },
+          include: {
+            author: { select: { id: true, fullName: true, role: true } },
+            attachments: true,
+            reactions: { include: { user: { select: { id: true, fullName: true } } } },
+          },
         },
         events: {
           orderBy: { createdAt: 'asc' },
@@ -369,13 +376,10 @@ export class TicketsService {
     const ticket = await this.prisma.ticket.findUnique({ where: { id } });
     if (!ticket) throw new NotFoundException();
     if (dto.priority && dto.priority !== ticket.priority) {
-      await this.writeEvent(
-        id,
-        EventType.PRIORITY_CHANGED,
-        user.id,
-        ticket.priority,
-        dto.priority,
-      );
+      await this.writeEvent(id, EventType.PRIORITY_CHANGED, user.id, ticket.priority, dto.priority);
+    }
+    if ('categoryId' in dto && dto.categoryId !== ticket.categoryId) {
+      await this.writeEvent(id, EventType.CATEGORY_CHANGED, user.id, ticket.categoryId ?? undefined, dto.categoryId ?? undefined);
     }
     return this.prisma.ticket.update({ where: { id }, data: dto });
   }
@@ -419,25 +423,46 @@ export class TicketsService {
     return { ok: true, status: to };
   }
 
-  async assign(id: string, assignedToId: string, user: AuthUser) {
+  async assign(id: string, userIds: string[], user: AuthUser) {
     const ticket = await this.prisma.ticket.findUnique({ where: { id } });
     if (!ticket) throw new NotFoundException();
-    const agent = await this.prisma.user.findUnique({
-      where: { id: assignedToId },
-    });
-    if (!agent || !([Role.AGENT, Role.ADMIN] as Role[]).includes(agent.role)) {
-      throw new BadRequestException('Assignee must be an agent or admin');
+
+    if (userIds.length === 0) {
+      // Unassign
+      await this.prisma.ticketAssignee.deleteMany({ where: { ticketId: id } });
+      await this.prisma.ticket.update({ where: { id }, data: { assignedToId: null } });
+      await this.writeEvent(id, EventType.ASSIGNED, user.id, ticket.assignedToId ?? undefined, undefined);
+      return { ok: true };
     }
-    const data: any = { assignedToId };
+
+    const agents = await this.prisma.user.findMany({
+      where: { id: { in: userIds }, role: { in: [Role.AGENT, Role.ADMIN] } },
+    });
+    if (agents.length !== userIds.length) {
+      throw new BadRequestException('All assignees must be agents or admins');
+    }
+
+    const primaryId = userIds[0];
+    const data: any = { assignedToId: primaryId };
     if (ticket.status === TicketStatus.NEW) data.status = TicketStatus.OPEN;
     await this.prisma.ticket.update({ where: { id }, data });
-    await this.addWatcherSilent(id, assignedToId);
+
+    // Sync assignees table
+    await this.prisma.ticketAssignee.deleteMany({ where: { ticketId: id } });
+    await this.prisma.ticketAssignee.createMany({
+      data: userIds.map((uid) => ({ ticketId: id, userId: uid })),
+    });
+
+    // Add all assignees as watchers
+    for (const uid of userIds) await this.addWatcherSilent(id, uid);
+
+    const primary = agents.find((a) => a.id === primaryId)!;
     await this.writeEvent(
       id,
       EventType.ASSIGNED,
       user.id,
       ticket.assignedToId ?? undefined,
-      assignedToId,
+      primaryId,
     );
     this.emit({
       type: EventType.ASSIGNED,
@@ -445,8 +470,57 @@ export class TicketsService {
       reference: ticket.reference,
       subject: ticket.subject,
       actorId: user.id,
-      detail: `Assigned to ${agent.fullName}`,
+      detail: `Assigned to ${agents.map((a) => a.fullName).join(', ')}`,
     });
+    return { ok: true, primary };
+  }
+
+  async editMessage(ticketId: string, msgId: string, body: string, user: AuthUser) {
+    const msg = await this.prisma.message.findFirst({ where: { id: msgId, ticketId } });
+    if (!msg) throw new NotFoundException('Message not found');
+    if (msg.authorId !== user.id) throw new ForbiddenException('Can only edit your own messages');
+    return this.prisma.message.update({
+      where: { id: msgId },
+      data: { body, editedAt: new Date() },
+    });
+  }
+
+  async deleteMessage(ticketId: string, msgId: string, user: AuthUser) {
+    const msg = await this.prisma.message.findFirst({ where: { id: msgId, ticketId } });
+    if (!msg) throw new NotFoundException('Message not found');
+    if (msg.authorId !== user.id && user.role === Role.CUSTOMER) {
+      throw new ForbiddenException('Cannot delete this message');
+    }
+    return this.prisma.message.update({
+      where: { id: msgId },
+      data: { deletedAt: new Date() },
+    });
+  }
+
+  async toggleReaction(ticketId: string, msgId: string, emoji: string, user: AuthUser) {
+    await this.assertAccess(ticketId, user);
+    const existing = await this.prisma.reaction.findUnique({
+      where: { messageId_userId_emoji: { messageId: msgId, userId: user.id, emoji } },
+    });
+    if (existing) {
+      await this.prisma.reaction.delete({
+        where: { messageId_userId_emoji: { messageId: msgId, userId: user.id, emoji } },
+      });
+      return { toggled: 'removed', emoji };
+    }
+    await this.prisma.reaction.create({ data: { messageId: msgId, userId: user.id, emoji } });
+    return { toggled: 'added', emoji };
+  }
+
+  async deleteAttachment(attachmentId: string, user: AuthUser) {
+    const attachment = await this.prisma.attachment.findUnique({ where: { id: attachmentId } });
+    if (!attachment) throw new NotFoundException('Attachment not found');
+    if (attachment.ticketId) await this.assertAccess(attachment.ticketId, user);
+    try {
+      const filePath = join(process.cwd(), process.env.UPLOAD_DIR ?? 'uploads', attachment.storageKey);
+      unlinkSync(filePath);
+    } catch { /* file may already be gone */ }
+    await this.prisma.attachment.delete({ where: { id: attachmentId } });
     return { ok: true };
   }
 
