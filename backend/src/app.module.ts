@@ -13,6 +13,7 @@ import { NotificationsModule } from './notifications/notifications.module';
 import { MailModule } from './mail/mail.module';
 import { SchedulerModule } from './scheduler/scheduler.module';
 import { ReportsModule } from './reports/reports.module';
+import { ViewsModule } from './views/views.module';
 import { HealthController } from './health.controller';
 import { UserThrottlerGuard } from './common/guards';
 
@@ -32,6 +33,7 @@ import { UserThrottlerGuard } from './common/guards';
     MailModule,
     SchedulerModule,
     ReportsModule,
+    ViewsModule,
   ],
   controllers: [HealthController],
   providers: [{ provide: APP_GUARD, useClass: UserThrottlerGuard }],

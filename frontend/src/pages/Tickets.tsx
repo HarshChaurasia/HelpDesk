@@ -49,6 +49,10 @@ export default function Tickets() {
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [bulkAction, setBulkAction] = useState('');
 
+  // Saved views
+  const [saveViewName, setSaveViewName] = useState('');
+  const [showSaveView, setShowSaveView] = useState(false);
+
   // Poll
   const [polling, setPolling] = useState(false);
   const [pollMsg, setPollMsg] = useState<string | null>(null);
@@ -80,6 +84,12 @@ export default function Tickets() {
   const { data: agents = [] } = useQuery<any[]>({
     queryKey: ['agents'],
     queryFn: async () => (await api.get('/users/agents')).data,
+    enabled: isStaff,
+  });
+
+  const { data: savedViews = [], refetch: refetchViews } = useQuery<any[]>({
+    queryKey: ['saved-views'],
+    queryFn: async () => (await api.get('/views')).data,
     enabled: isStaff,
   });
 
@@ -138,6 +148,29 @@ export default function Tickets() {
     a.download = `tickets-${new Date().toISOString().slice(0, 10)}.csv`;
     a.click();
     URL.revokeObjectURL(url);
+  }
+
+  async function saveView() {
+    if (!saveViewName.trim()) return;
+    const filters = { search, statusFilter, priorityFilter, categoryId, scope };
+    await api.post('/views', { name: saveViewName.trim(), filters });
+    setSaveViewName('');
+    setShowSaveView(false);
+    refetchViews();
+  }
+
+  function applyView(v: any) {
+    const f = v.filters ?? {};
+    setSearch(f.search ?? '');
+    setStatusFilter(f.statusFilter ?? []);
+    setPriorityFilter(f.priorityFilter ?? []);
+    setCategoryId(f.categoryId ?? '');
+    setScope(f.scope ?? '');
+  }
+
+  async function deleteView(id: string) {
+    await api.delete(`/views/${id}`);
+    refetchViews();
   }
 
   async function pollNow() {
@@ -222,6 +255,46 @@ export default function Tickets() {
           >
             Clear filters
           </button>
+        )}
+
+        {/* Saved Views */}
+        {isStaff && (
+          <div style={{ marginLeft: 'auto', display: 'flex', gap: 6, alignItems: 'center' }}>
+            {savedViews.length > 0 && (
+              <select
+                style={{ fontSize: 12, padding: '4px 8px' }}
+                value=""
+                onChange={(e) => {
+                  const v = savedViews.find((sv) => sv.id === e.target.value);
+                  if (v) applyView(v);
+                }}
+              >
+                <option value="">Saved views…</option>
+                {savedViews.map((v: any) => (
+                  <option key={v.id} value={v.id}>{v.name}</option>
+                ))}
+              </select>
+            )}
+            {showSaveView ? (
+              <div style={{ display: 'flex', gap: 4 }}>
+                <input
+                  type="text"
+                  placeholder="View name…"
+                  value={saveViewName}
+                  onChange={(e) => setSaveViewName(e.target.value)}
+                  onKeyDown={(e) => { if (e.key === 'Enter') saveView(); if (e.key === 'Escape') setShowSaveView(false); }}
+                  style={{ fontSize: 12, padding: '4px 8px', width: 130 }}
+                  autoFocus
+                />
+                <button className="btn btn-primary btn-xs" onClick={saveView}>Save</button>
+                <button className="btn btn-ghost btn-xs" onClick={() => setShowSaveView(false)}>✕</button>
+              </div>
+            ) : (
+              <button className="btn btn-ghost btn-sm" onClick={() => setShowSaveView(true)} style={{ fontSize: 12 }}>
+                ☆ Save view
+              </button>
+            )}
+          </div>
         )}
       </div>
 

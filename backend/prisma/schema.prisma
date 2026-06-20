@@ -97,6 +97,7 @@ model User {
   reactions       Reaction[]       @relation("UserReactions")
   timeLogs        TicketTimeLog[]  @relation("TimeLogUser")
   ccAdded         TicketCC[]       @relation("CCAddedBy")
+  savedViews      SavedView[]
 }
 
 model SlaPolicy {
@@ -149,6 +150,18 @@ model TicketTag {
 
   @@id([ticketId, tagId])
   @@index([ticketId])
+}
+
+model SavedView {
+  id        String   @id @default(uuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  name      String
+  filters   Json
+  createdAt DateTime @default(now())
+
+  @@unique([userId, name])
+  @@index([userId])
 }
 
 model TicketFeedback {
