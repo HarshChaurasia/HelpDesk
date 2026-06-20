@@ -13,7 +13,7 @@ import {
   Min,
   MinLength,
 } from 'class-validator';
-import { Priority, TicketStatus, MessageType, TimeLogType } from '@prisma/client';
+import { Priority, TicketStatus, MessageType, TimeLogType, ChangeRequestStatus } from '@prisma/client';
 
 export class CreateTicketDto {
   @IsString() @MinLength(3) subject: string;
@@ -92,6 +92,15 @@ export class CcDto {
 
 export class MergeDto {
   @IsUUID() targetId: string;
+}
+
+export class ChangeRequestDto {
+  @IsString() @MinLength(1) title: string;
+  @IsOptional() @IsString() description?: string;
+  @IsOptional() @IsString() impact?: string;
+  @IsOptional() @IsString() rollbackPlan?: string;
+  @IsOptional() @IsDateString() scheduledAt?: string;
+  @IsOptional() @IsEnum(ChangeRequestStatus) status?: ChangeRequestStatus;
 }
 
 export class EscalateDto {

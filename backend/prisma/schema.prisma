@@ -99,6 +99,7 @@ model User {
   ccAdded         TicketCC[]       @relation("CCAddedBy")
   savedViews      SavedView[]
   escalations     Escalation[]     @relation("EscalatedBy")
+  changeRequests  ChangeRequest[]  @relation("ChangeRequestCreator")
 }
 
 model SlaPolicy {
@@ -151,6 +152,29 @@ model TicketTag {
 
   @@id([ticketId, tagId])
   @@index([ticketId])
+}
+
+enum ChangeRequestStatus {
+  PENDING
+  APPROVED
+  REJECTED
+  IMPLEMENTED
+}
+
+model ChangeRequest {
+  id            String              @id @default(uuid())
+  ticketId      String              @unique
+  ticket        Ticket              @relation(fields: [ticketId], references: [id], onDelete: Cascade)
+  title         String
+  description   String?
+  impact        String?
+  rollbackPlan  String?
+  scheduledAt   DateTime?
+  status        ChangeRequestStatus @default(PENDING)
+  createdById   String
+  createdBy     User                @relation("ChangeRequestCreator", fields: [createdById], references: [id])
+  createdAt     DateTime            @default(now())
+  updatedAt     DateTime            @updatedAt
 }
 
 model Escalation {
@@ -259,9 +283,10 @@ model Ticket {
   notifications Notification[]
   tags          TicketTag[]
   timeLogs      TicketTimeLog[]
-  ccRecipients  TicketCC[]
-  feedback      TicketFeedback?
-  escalation    Escalation?
+  ccRecipients   TicketCC[]
+  feedback       TicketFeedback?
+  escalation     Escalation?
+  changeRequest  ChangeRequest?
 
   @@index([status])
   @@index([assignedToId, status])

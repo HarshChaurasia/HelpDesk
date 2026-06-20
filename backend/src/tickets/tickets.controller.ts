@@ -35,6 +35,7 @@ import {
   FeedbackDto,
   MergeDto,
   EscalateDto,
+  ChangeRequestDto,
 } from './dto';
 import { ApiTags, ApiBearerAuth } from '@nestjs/swagger';
 import { Roles, CurrentUser, AuthUser } from '../common/decorators';
@@ -189,6 +190,12 @@ export class TicketsController {
     @CurrentUser() user: AuthUser,
   ) {
     return this.tickets.removeWatcher(id, userId, user);
+  }
+
+  @Roles('AGENT', 'ADMIN')
+  @Post(':id/change-request')
+  changeRequest(@Param('id') id: string, @Body() dto: ChangeRequestDto, @CurrentUser() user: AuthUser) {
+    return this.tickets.upsertChangeRequest(id, dto, user);
   }
 
   @Roles('AGENT', 'ADMIN')

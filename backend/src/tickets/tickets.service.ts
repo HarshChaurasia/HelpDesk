@@ -377,6 +377,31 @@ export class TicketsService {
     return { data, meta: { page, limit, total } };
   }
 
+  async upsertChangeRequest(ticketId: string, dto: any, user: AuthUser) {
+    const ticket = await this.prisma.ticket.findUnique({ where: { id: ticketId } });
+    if (!ticket) throw new NotFoundException('Ticket not found');
+    return this.prisma.changeRequest.upsert({
+      where: { ticketId },
+      update: {
+        title: dto.title,
+        description: dto.description ?? null,
+        impact: dto.impact ?? null,
+        rollbackPlan: dto.rollbackPlan ?? null,
+        scheduledAt: dto.scheduledAt ? new Date(dto.scheduledAt) : null,
+        status: dto.status ?? undefined,
+      },
+      create: {
+        ticketId,
+        title: dto.title,
+        description: dto.description ?? null,
+        impact: dto.impact ?? null,
+        rollbackPlan: dto.rollbackPlan ?? null,
+        scheduledAt: dto.scheduledAt ? new Date(dto.scheduledAt) : null,
+        createdById: user.id,
+      },
+    });
+  }
+
   async escalate(ticketId: string, level: number, reason: string, user: AuthUser) {
     const ticket = await this.prisma.ticket.findUnique({ where: { id: ticketId } });
     if (!ticket) throw new NotFoundException('Ticket not found');
@@ -563,6 +588,7 @@ export class TicketsService {
         ccRecipients: { orderBy: { addedAt: 'asc' }, include: { addedBy: { select: { id: true, fullName: true } } } },
         feedback: true,
         escalation: { include: { escalatedBy: { select: { id: true, fullName: true } } } },
+        changeRequest: true,
       },
     });
     if (!ticket) throw new NotFoundException();

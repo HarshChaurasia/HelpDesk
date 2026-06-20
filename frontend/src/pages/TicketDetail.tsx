@@ -108,6 +108,14 @@ export default function TicketDetail() {
   // CC
   const [ccInput, setCcInput] = useState('');
 
+  // Change Request
+  const [showCR, setShowCR] = useState(false);
+  const [crTitle, setCrTitle] = useState('');
+  const [crDescription, setCrDescription] = useState('');
+  const [crImpact, setCrImpact] = useState('');
+  const [crRollback, setCrRollback] = useState('');
+  const [crScheduled, setCrScheduled] = useState('');
+
   // Escalation
   const [showEscalate, setShowEscalate] = useState(false);
   const [escalateLevel, setEscalateLevel] = useState(1);
@@ -234,6 +242,32 @@ export default function TicketDetail() {
     refresh();
   }
 
+  function openCR() {
+    if (t.changeRequest) {
+      setCrTitle(t.changeRequest.title ?? '');
+      setCrDescription(t.changeRequest.description ?? '');
+      setCrImpact(t.changeRequest.impact ?? '');
+      setCrRollback(t.changeRequest.rollbackPlan ?? '');
+      setCrScheduled(t.changeRequest.scheduledAt ? new Date(t.changeRequest.scheduledAt).toISOString().slice(0, 16) : '');
+    } else {
+      setCrTitle(t.subject);
+    }
+    setShowCR(true);
+  }
+
+  async function submitCR() {
+    if (!crTitle.trim()) return;
+    await api.post(`/tickets/${id}/change-request`, {
+      title: crTitle.trim(),
+      description: crDescription || undefined,
+      impact: crImpact || undefined,
+      rollbackPlan: crRollback || undefined,
+      scheduledAt: crScheduled || undefined,
+    });
+    setShowCR(false);
+    refresh();
+  }
+
   async function doEscalate() {
     if (!escalateReason.trim()) return;
     await api.post(`/tickets/${id}/escalate`, { level: escalateLevel, reason: escalateReason.trim() });
@@ -323,6 +357,11 @@ export default function TicketDetail() {
               🔺 Escalated L{t.escalation.level}
             </span>
           )}
+          {t.changeRequest && (
+            <span className="badge" style={{ background: '#ede9fe', color: '#6d28d9' }}>
+              CR: {t.changeRequest.status}
+            </span>
+          )}
           {t.noAutoClose && <span className="badge" style={{ background: '#f3f4f6', color: '#6b7280' }}>No Auto-Close</span>}
         </div>
         <div className="ticket-subject">{t.subject}</div>
@@ -351,6 +390,9 @@ export default function TicketDetail() {
             {t.status !== 'CLOSED' && (
               <button type="button" className="btn btn-secondary btn-xs" onClick={() => setShowMerge(true)}>⇄ Merge into…</button>
             )}
+            <button type="button" className="btn btn-secondary btn-xs" onClick={openCR}>
+              {t.changeRequest ? '✏️ Edit CR' : '→ Change Request'}
+            </button>
             {!t.escalation?.resolvedAt && !t.escalation ? (
               <button type="button" className="btn btn-secondary btn-xs" style={{ color: '#b45309' }} onClick={() => setShowEscalate(true)}>🔺 Escalate</button>
             ) : t.escalation && !t.escalation.resolvedAt ? (
@@ -458,6 +500,48 @@ export default function TicketDetail() {
               <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
                 <button className="btn btn-secondary btn-sm" onClick={() => setShowMerge(false)}>Cancel</button>
                 <button className="btn btn-primary btn-sm" disabled={!mergeTarget} onClick={doMerge}>Merge</button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Change Request modal */}
+      {showCR && (
+        <div className="preview-overlay" onClick={() => setShowCR(false)}>
+          <div className="preview-modal" style={{ maxWidth: 540 }} onClick={(e) => e.stopPropagation()}>
+            <div className="preview-modal-header">
+              <span style={{ fontSize: 14, fontWeight: 600 }}>{t.changeRequest ? 'Edit Change Request' : 'Convert to Change Request'}</span>
+              <button className="btn btn-ghost btn-xs" onClick={() => setShowCR(false)}>✕</button>
+            </div>
+            <div style={{ padding: '16px 20px', display: 'flex', flexDirection: 'column', gap: 12 }}>
+              <div className="form-group" style={{ marginBottom: 0 }}>
+                <label className="form-label">Title <span style={{ color: '#ef4444' }}>*</span></label>
+                <input type="text" value={crTitle} onChange={(e) => setCrTitle(e.target.value)} placeholder="Change request title…" style={{ fontSize: 13 }} />
+              </div>
+              <div className="form-group" style={{ marginBottom: 0 }}>
+                <label className="form-label">Description</label>
+                <textarea rows={2} value={crDescription} onChange={(e) => setCrDescription(e.target.value)} placeholder="What change is being made?" />
+              </div>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
+                <div className="form-group" style={{ marginBottom: 0 }}>
+                  <label className="form-label">Impact</label>
+                  <textarea rows={2} value={crImpact} onChange={(e) => setCrImpact(e.target.value)} placeholder="Who / what is affected?" />
+                </div>
+                <div className="form-group" style={{ marginBottom: 0 }}>
+                  <label className="form-label">Rollback Plan</label>
+                  <textarea rows={2} value={crRollback} onChange={(e) => setCrRollback(e.target.value)} placeholder="How to revert if needed?" />
+                </div>
+              </div>
+              <div className="form-group" style={{ marginBottom: 0 }}>
+                <label className="form-label">Scheduled Date</label>
+                <input type="datetime-local" value={crScheduled} onChange={(e) => setCrScheduled(e.target.value)} style={{ fontSize: 13 }} />
+              </div>
+              <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
+                <button className="btn btn-secondary btn-sm" onClick={() => setShowCR(false)}>Cancel</button>
+                <button className="btn btn-primary btn-sm" disabled={!crTitle.trim()} onClick={submitCR}>
+                  {t.changeRequest ? 'Update' : 'Create Change Request'}
+                </button>
               </div>
             </div>
           </div>
@@ -971,6 +1055,22 @@ export default function TicketDetail() {
                 <span className="muted">({t.feedback.rating}/5)</span>
               </div>
               {t.feedback.comment && <div style={{ fontSize: 12.5, color: 'var(--text-2)', fontStyle: 'italic' }}>"{t.feedback.comment}"</div>}
+            </div>
+          )}
+
+          {/* Change Request */}
+          {isStaff && t.changeRequest && (
+            <div className="card" style={{ marginTop: 12 }}>
+              <div className="card-header">
+                <span className="card-title">Change Request</span>
+                <span className={`badge`} style={{ background: '#ede9fe', color: '#6d28d9', fontSize: 11 }}>{t.changeRequest.status}</span>
+              </div>
+              <div style={{ fontSize: 13, fontWeight: 500, marginBottom: 6 }}>{t.changeRequest.title}</div>
+              {t.changeRequest.description && <div style={{ fontSize: 12.5, color: 'var(--text-2)', marginBottom: 4 }}>{t.changeRequest.description}</div>}
+              {t.changeRequest.impact && <MetaRow label="Impact"><div style={{ fontSize: 12.5 }}>{t.changeRequest.impact}</div></MetaRow>}
+              {t.changeRequest.rollbackPlan && <MetaRow label="Rollback"><div style={{ fontSize: 12.5 }}>{t.changeRequest.rollbackPlan}</div></MetaRow>}
+              {t.changeRequest.scheduledAt && <MetaRow label="Scheduled"><div style={{ fontSize: 12.5 }}>{formatDate(t.changeRequest.scheduledAt)}</div></MetaRow>}
+              <button className="btn btn-ghost btn-xs" style={{ marginTop: 6 }} onClick={openCR}>Edit</button>
             </div>
           )}
 
