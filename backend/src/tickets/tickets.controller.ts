@@ -8,9 +8,11 @@ import {
   Post,
   Delete,
   Query,
+  Res,
   UploadedFile,
   UseInterceptors,
 } from '@nestjs/common';
+import { Response } from 'express';
 import { FileInterceptor } from '@nestjs/platform-express';
 import { diskStorage } from 'multer';
 import { extname, join } from 'path';
@@ -74,6 +76,17 @@ export class TicketsController {
   @Post()
   create(@Body() dto: CreateTicketDto, @CurrentUser() user: AuthUser) {
     return this.tickets.create(dto, user);
+  }
+
+  @Get('export')
+  async export(@CurrentUser() user: AuthUser, @Query() q: any, @Res() res: Response) {
+    const csv = await this.tickets.exportCsv(user, q);
+    const filename = `tickets-${new Date().toISOString().slice(0, 10)}.csv`;
+    res.set({
+      'Content-Type': 'text/csv; charset=utf-8',
+      'Content-Disposition': `attachment; filename="${filename}"`,
+    });
+    res.send('﻿' + csv);
   }
 
   @Get(':id')

@@ -377,6 +377,64 @@ export class TicketsService {
     return { data, meta: { page, limit, total } };
   }
 
+  async exportCsv(user: AuthUser, q: any): Promise<string> {
+    const where: any = {};
+    if (user.role === Role.CUSTOMER) {
+      where.OR = [
+        { createdById: user.id },
+        { watchers: { some: { userId: user.id } } },
+      ];
+    } else {
+      if (q.mine === 'true') where.assignedToId = user.id;
+      if (q.assignedToId) where.assignedToId = q.assignedToId;
+    }
+    if (q.status) where.status = Array.isArray(q.status) ? { in: q.status } : q.status;
+    if (q.priority) where.priority = Array.isArray(q.priority) ? { in: q.priority } : q.priority;
+    if (q.categoryId) where.categoryId = q.categoryId;
+    if (q.q) {
+      where.AND = [{
+        OR: [
+          { subject: { contains: q.q, mode: 'insensitive' } },
+          { reference: { contains: q.q, mode: 'insensitive' } },
+        ],
+      }];
+    }
+    const tickets = await this.prisma.ticket.findMany({
+      where,
+      include: {
+        category: { select: { name: true } },
+        subcategory: { select: { name: true } },
+        assignedTo: { select: { fullName: true } },
+        createdBy: { select: { fullName: true, email: true } },
+      },
+      orderBy: { createdAt: 'desc' },
+      take: 10000,
+    });
+
+    const escape = (v: string | null | undefined) => {
+      if (v == null) return '';
+      const s = String(v);
+      return s.includes(',') || s.includes('"') || s.includes('\n')
+        ? `"${s.replace(/"/g, '""')}"` : s;
+    };
+
+    const headers = ['Reference', 'Subject', 'Status', 'Priority', 'Category', 'Subcategory', 'Customer', 'Customer Email', 'Assignee', 'Created'];
+    const rows = tickets.map((t) => [
+      escape(t.reference),
+      escape(t.subject),
+      escape(t.status),
+      escape(t.priority),
+      escape(t.category?.name),
+      escape(t.subcategory?.name),
+      escape(t.createdBy.fullName),
+      escape(t.createdBy.email),
+      escape(t.assignedTo?.fullName),
+      escape(t.createdAt.toISOString()),
+    ].join(','));
+
+    return [headers.join(','), ...rows].join('\r\n');
+  }
+
   async getOne(id: string, user: AuthUser) {
     await this.assertAccess(id, user);
     const ticket = await this.prisma.ticket.findUnique({

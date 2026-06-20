@@ -130,6 +130,16 @@ export default function Tickets() {
     }
   }
 
+  async function exportCsv() {
+    const res = await api.get('/tickets/export', { params: queryParams, responseType: 'blob' });
+    const url = URL.createObjectURL(res.data);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `tickets-${new Date().toISOString().slice(0, 10)}.csv`;
+    a.click();
+    URL.revokeObjectURL(url);
+  }
+
   async function pollNow() {
     setPolling(true);
     setPollMsg(null);
@@ -164,6 +174,7 @@ export default function Tickets() {
               </button>
             </>
           )}
+          <button className="btn btn-secondary btn-sm" onClick={exportCsv}>↓ Export CSV</button>
           <Link to="/tickets/new" className="btn btn-primary btn-sm">+ New Ticket</Link>
         </div>
       </div>
