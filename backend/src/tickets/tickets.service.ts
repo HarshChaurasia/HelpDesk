@@ -464,6 +464,7 @@ export class TicketsService {
         userId: user.id,
         type: dto.type,
         hours: dto.hours,
+        billable: dto.billable ?? true,
         note: dto.note ?? null,
       },
       include: { user: { select: { id: true, fullName: true } } },

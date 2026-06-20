@@ -75,6 +75,7 @@ export class WatcherDto {
 export class TimeLogDto {
   @IsEnum(TimeLogType) type: TimeLogType;
   @IsNumber() @Min(0.1) hours: number;
+  @IsOptional() @IsBoolean() billable?: boolean;
   @IsOptional() @IsString() note?: string;
 }
 

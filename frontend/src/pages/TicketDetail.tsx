@@ -99,6 +99,7 @@ export default function TicketDetail() {
   const [showTimeLog, setShowTimeLog] = useState(false);
   const [timeType, setTimeType] = useState<typeof TIME_LOG_TYPES[number]>('INVESTIGATION');
   const [timeHours, setTimeHours] = useState('');
+  const [timeBillable, setTimeBillable] = useState(true);
   const [timeNote, setTimeNote] = useState('');
 
   // Resolution/RCA panel
@@ -152,8 +153,11 @@ export default function TicketDetail() {
 
   // Time log totals
   const timeByType: Record<string, number> = {};
+  let billableHours = 0, nonBillableHours = 0;
   for (const log of (t.timeLogs ?? [])) {
     timeByType[log.type] = (timeByType[log.type] ?? 0) + log.hours;
+    if (log.billable !== false) billableHours += log.hours;
+    else nonBillableHours += log.hours;
   }
   const totalHours = Object.values(timeByType).reduce((s: number, v: any) => s + (v as number), 0);
 
@@ -215,8 +219,8 @@ export default function TicketDetail() {
 
   async function addTimeLog() {
     if (!timeHours || parseFloat(timeHours) <= 0) return;
-    await api.post(`/tickets/${id}/timelogs`, { type: timeType, hours: parseFloat(timeHours), note: timeNote });
-    setTimeHours(''); setTimeNote(''); setShowTimeLog(false);
+    await api.post(`/tickets/${id}/timelogs`, { type: timeType, hours: parseFloat(timeHours), billable: timeBillable, note: timeNote });
+    setTimeHours(''); setTimeNote(''); setTimeBillable(true); setShowTimeLog(false);
     refresh();
   }
 
@@ -423,6 +427,13 @@ export default function TicketDetail() {
                     <label className="form-label">Hours</label>
                     <input type="number" min="0.1" step="0.5" placeholder="e.g. 2.5" value={timeHours} onChange={(e) => setTimeHours(e.target.value)} />
                   </div>
+                  <div className="form-group" style={{ marginBottom: 0 }}>
+                    <label className="form-label">Billable</label>
+                    <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 13, marginTop: 4 }}>
+                      <input type="checkbox" style={{ width: 'auto' }} checked={timeBillable} onChange={(e) => setTimeBillable(e.target.checked)} />
+                      Billable hours
+                    </label>
+                  </div>
                   <div className="form-group" style={{ marginBottom: 0, gridColumn: '1 / -1' }}>
                     <label className="form-label">Note (optional)</label>
                     <input type="text" placeholder="What did you work on?" value={timeNote} onChange={(e) => setTimeNote(e.target.value)} />
@@ -445,6 +456,12 @@ export default function TicketDetail() {
                     <span>Total</span>
                     <span>{totalHours}h</span>
                   </div>
+                  {(billableHours > 0 || nonBillableHours > 0) && (
+                    <div style={{ display: 'flex', gap: 8, marginTop: 4, fontSize: 11.5, color: 'var(--text-3)' }}>
+                      <span>Billable: <strong style={{ color: 'var(--text)' }}>{billableHours}h</strong></span>
+                      {nonBillableHours > 0 && <span>Non-billable: <strong style={{ color: 'var(--text)' }}>{nonBillableHours}h</strong></span>}
+                    </div>
+                  )}
                 </div>
               ) : (
                 <div className="muted" style={{ fontSize: 12 }}>No time logged yet.</div>

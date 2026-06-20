@@ -158,6 +158,7 @@ model TicketTimeLog {
   user      User        @relation("TimeLogUser", fields: [userId], references: [id])
   type      TimeLogType
   hours     Float
+  billable  Boolean     @default(true)
   note      String?
   loggedAt  DateTime    @default(now())
 
