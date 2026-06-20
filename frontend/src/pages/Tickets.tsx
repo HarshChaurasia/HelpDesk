@@ -178,7 +178,7 @@ export default function Tickets() {
             placeholder="Search tickets, customers…"
             value={search}
             onChange={(e) => setSearch(e.target.value)}
-            style={{ border: 'none', outline: 'none', background: 'transparent', fontSize: 13, padding: '6px 8px 6px 0', width: 200 }}
+            style={{ border: 'none', outline: 'none', background: 'transparent', fontSize: 13, padding: '6px 8px 6px 32px', width: 200 }}
           />
           {search && <button className="btn btn-ghost btn-xs" onClick={() => setSearch('')} style={{ padding: '0 4px' }}>✕</button>}
         </div>
