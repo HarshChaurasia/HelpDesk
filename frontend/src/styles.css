@@ -185,7 +185,8 @@ h3 { font-size: 15px; font-weight: 600; line-height: 1.4;  color: #1f2937; }
   flex: 1;
   display: flex;
   flex-direction: column;
-  min-height: 100vh;
+  height: 100vh;
+  overflow: hidden;
 }
 
 .topbar {
@@ -207,6 +208,11 @@ h3 { font-size: 15px; font-weight: 600; line-height: 1.4;  color: #1f2937; }
   padding: 16px 24px;
   max-width: 1200px;
   width: 100%;
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  overflow-y: auto;
 }
 
 /* Legacy compat */
@@ -361,6 +367,16 @@ textarea { resize: vertical; }
 
 .card-title { font-size: 14px; font-weight: 600; }
 
+.collapsible-card .collapsible-header { margin-bottom: 0; border-bottom: none; padding-bottom: 0; }
+.collapsible-card .collapsible-header:hover { background: var(--surface-sunken); margin: -16px; padding: 16px; border-radius: var(--radius); }
+.collapsible-card .collapsible-body {
+  margin-top: 12px;
+  padding-top: 12px;
+  border-top: 1px solid var(--border);
+  overflow-y: auto;
+  scrollbar-width: thin;
+}
+
 /* ═══════════════════════════════════════════════════════
    Tables
 ═══════════════════════════════════════════════════════ */
@@ -385,6 +401,9 @@ th {
   background: var(--surface-sunken);
   border-bottom: 1px solid var(--border);
   white-space: nowrap;
+  position: sticky;
+  top: 0;
+  z-index: 1;
 }
 
 td {
@@ -1490,6 +1509,17 @@ tbody tr:hover { background: #fafbfc; }
 }
 
 /* ═══════════════════════════════════════════════════════
+   Ticket list — inline row actions
+═══════════════════════════════════════════════════════ */
+.row-actions {
+  display: flex;
+  gap: 4px;
+  opacity: 0;
+  transition: opacity .15s;
+}
+tbody tr:hover .row-actions { opacity: 1; }
+
+/* ═══════════════════════════════════════════════════════
    Ticket list — age badge
 ═══════════════════════════════════════════════════════ */
 .age-badge {
@@ -1527,6 +1557,19 @@ tbody tr:hover { background: #fafbfc; }
   flex-shrink: 0;
   display: inline-block;
 }
+
+.sla-badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 2px 7px;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+.sla-badge.sla-breached { background: #fee2e2; color: #dc2626; }
+.sla-badge.sla-at-risk  { background: #ffedd5; color: #c2410c; }
+.sla-badge.sla-ok       { background: #dcfce7; color: #16a34a; }
 
 .tag-chip {
   display: inline-flex;

@@ -72,6 +72,44 @@ function ReactionBar({ message, ticketId, currentUserId, onRefresh }: {
   );
 }
 
+function CollapsibleCard({
+  title,
+  defaultOpen = true,
+  maxHeight = 360,
+  headerRight,
+  children,
+  style,
+}: {
+  title: string;
+  defaultOpen?: boolean;
+  maxHeight?: number;
+  headerRight?: React.ReactNode;
+  children: React.ReactNode;
+  style?: React.CSSProperties;
+}) {
+  const [open, setOpen] = useState(defaultOpen);
+  return (
+    <div className="card collapsible-card" style={style}>
+      <div
+        className="card-header collapsible-header"
+        onClick={() => setOpen((o) => !o)}
+        style={{ cursor: 'pointer', userSelect: 'none' }}
+      >
+        <span className="card-title" style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+          <span style={{ fontSize: 11, opacity: 0.5, transition: 'transform .15s', transform: open ? 'rotate(90deg)' : 'rotate(0)' }}>▶</span>
+          {title}
+        </span>
+        {headerRight && <span onClick={(e) => e.stopPropagation()}>{headerRight}</span>}
+      </div>
+      {open && (
+        <div className="collapsible-body" style={{ maxHeight, overflowY: 'auto' }}>
+          {children}
+        </div>
+      )}
+    </div>
+  );
+}
+
 export default function TicketDetail() {
   const { id } = useParams<{ id: string }>();
   const { user } = useAuth();
@@ -105,6 +143,12 @@ export default function TicketDetail() {
   // Resolution/RCA panel
   const [showResolution, setShowResolution] = useState(false);
 
+  // Customer contact editing (for missing phone/org)
+  const [editingContact, setEditingContact] = useState(false);
+  const [contactPhone, setContactPhone] = useState('');
+  const [contactOrg, setContactOrg] = useState('');
+  const [savingContact, setSavingContact] = useState(false);
+
   // CC
   const [ccInput, setCcInput] = useState('');
 
@@ -120,6 +164,10 @@ export default function TicketDetail() {
   const [showEscalate, setShowEscalate] = useState(false);
   const [escalateLevel, setEscalateLevel] = useState(1);
   const [escalateReason, setEscalateReason] = useState('');
+
+  // Related tickets
+  const [relatedSearch, setRelatedSearch] = useState('');
+  const [showRelatedSearch, setShowRelatedSearch] = useState(false);
 
   // Merge
   const [showMerge, setShowMerge] = useState(false);
@@ -235,6 +283,26 @@ export default function TicketDetail() {
     refresh();
   }
 
+  async function saveContact() {
+    if (!t.createdBy?.id) return;
+    setSavingContact(true);
+    try {
+      await api.patch(`/users/${t.createdBy.id}/contact`, {
+        phone: contactPhone || undefined,
+        organization: contactOrg || undefined,
+      });
+      setEditingContact(false);
+      refresh();
+    } catch { /* ignore */ }
+    finally { setSavingContact(false); }
+  }
+
+  function startEditContact() {
+    setContactPhone(t.createdBy?.phone ?? '');
+    setContactOrg(t.createdBy?.organization ?? '');
+    setEditingContact(true);
+  }
+
   async function addCC() {
     if (!ccInput.trim()) return;
     await api.post(`/tickets/${id}/cc`, { email: ccInput.trim() });
@@ -291,6 +359,15 @@ export default function TicketDetail() {
     enabled: showMerge && mergeSearch.length >= 2,
   });
 
+  const { data: relatedResults } = useQuery({
+    queryKey: ['tickets-related-search', relatedSearch],
+    queryFn: async () => {
+      if (!relatedSearch || relatedSearch.length < 2) return { data: [] };
+      return (await api.get('/tickets', { params: { q: relatedSearch, limit: 8 } })).data;
+    },
+    enabled: showRelatedSearch && relatedSearch.length >= 2,
+  });
+
   async function doMerge() {
     if (!mergeTarget) return;
     if (!confirm(`Merge this ticket into ${mergeTarget.reference}? This ticket will be closed.`)) return;
@@ -311,6 +388,28 @@ export default function TicketDetail() {
 
   async function removeCC(email: string) {
     await api.delete(`/tickets/${id}/cc/${encodeURIComponent(email)}`);
+    refresh();
+  }
+
+  async function downloadPdf() {
+    const res = await api.get(`/tickets/${id}/pdf`, { responseType: 'blob' });
+    const url = URL.createObjectURL(new Blob([res.data], { type: 'application/pdf' }));
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `ticket-${t.reference}.pdf`;
+    a.click();
+    URL.revokeObjectURL(url);
+  }
+
+  async function linkRelated(relatedId: string) {
+    await api.post(`/tickets/${id}/related`, { relatedId });
+    setRelatedSearch('');
+    setShowRelatedSearch(false);
+    refresh();
+  }
+
+  async function unlinkRelated(relatedId: string) {
+    await api.delete(`/tickets/${id}/related/${relatedId}`);
     refresh();
   }
 
@@ -375,6 +474,7 @@ export default function TicketDetail() {
             {!currentAssignees.some((a) => a.id === user?.id) && (
               <button type="button" className="btn btn-secondary btn-xs" onClick={assignToMe}>👤 Assign to Me</button>
             )}
+            <button type="button" className="btn btn-secondary btn-xs" onClick={downloadPdf}>↓ PDF</button>
             {t.allowedTransitions?.includes('RESOLVED') && (
               <button type="button" className="btn btn-secondary btn-xs" onClick={() => setShowResolution(true)}>✓ Resolve</button>
             )}
@@ -790,27 +890,76 @@ export default function TicketDetail() {
 
         {/* ── Middle: Details ── */}
         <div className="ticket-details-col">
-          <div className="card" style={{ position: 'sticky', top: 68 }}>
-            <div className="card-header">
-              <span className="card-title">Details</span>
-              {isStaff && hasDraft && (
-                <button className="btn btn-primary btn-xs" onClick={saveChanges} disabled={saving}>
-                  {saving ? 'Saving…' : 'Save changes'}
-                </button>
-              )}
-            </div>
+          <CollapsibleCard
+            title="Details"
+            maxHeight={500}
+            style={{ position: 'sticky', top: 68 }}
+            headerRight={isStaff && hasDraft ? (
+              <button className="btn btn-primary btn-xs" onClick={saveChanges} disabled={saving}>
+                {saving ? 'Saving…' : 'Save changes'}
+              </button>
+            ) : undefined}
+          >
 
-            {/* Customer */}
+            {/* Customer Information */}
             <MetaRow label="Customer">
               {t.createdBy?.fullName ? (
                 <div>
-                  <div className="user-cell" style={{ marginBottom: 3 }}>
+                  <div className="user-cell" style={{ marginBottom: 4 }}>
                     <Avatar name={t.createdBy.fullName} size="md" />
                     <span style={{ fontWeight: 500 }}>{t.createdBy.fullName}</span>
                   </div>
-                  {t.createdBy.email && <div style={{ fontSize: 12, color: 'var(--text-3)', marginTop: 2 }}>{t.createdBy.email}</div>}
-                  {t.createdBy.phone && <div style={{ fontSize: 12, color: 'var(--text-3)' }}>📞 {t.createdBy.phone}</div>}
-                  {t.createdBy.organization && <div style={{ fontSize: 12, color: 'var(--text-3)' }}>🏢 {t.createdBy.organization}</div>}
+                  <div style={{ fontSize: 12, color: 'var(--text-3)', marginBottom: 2 }}>✉️ {t.createdBy.email}</div>
+
+                  {/* Phone */}
+                  {editingContact ? (
+                    <input
+                      type="tel"
+                      placeholder="Phone…"
+                      value={contactPhone}
+                      onChange={(e) => setContactPhone(e.target.value)}
+                      style={{ fontSize: 12, padding: '3px 6px', marginBottom: 4, width: '100%' }}
+                    />
+                  ) : t.createdBy.phone ? (
+                    <div style={{ fontSize: 12, color: 'var(--text-3)', marginBottom: 2 }}>📞 {t.createdBy.phone}</div>
+                  ) : isStaff ? (
+                    <div style={{ fontSize: 12, color: 'var(--text-3)', marginBottom: 2 }}>
+                      📞 <span className="muted">No phone — </span>
+                      <button type="button" className="btn btn-ghost btn-xs" style={{ fontSize: 11, padding: '0 4px' }} onClick={startEditContact}>Add</button>
+                    </div>
+                  ) : null}
+
+                  {/* Organization */}
+                  {editingContact ? (
+                    <input
+                      type="text"
+                      placeholder="Organization…"
+                      value={contactOrg}
+                      onChange={(e) => setContactOrg(e.target.value)}
+                      style={{ fontSize: 12, padding: '3px 6px', marginBottom: 6, width: '100%' }}
+                    />
+                  ) : t.createdBy.organization ? (
+                    <div style={{ fontSize: 12, color: 'var(--text-3)' }}>🏢 {t.createdBy.organization}</div>
+                  ) : isStaff ? (
+                    <div style={{ fontSize: 12, color: 'var(--text-3)' }}>
+                      🏢 <span className="muted">No org — </span>
+                      {!editingContact && <button type="button" className="btn btn-ghost btn-xs" style={{ fontSize: 11, padding: '0 4px' }} onClick={startEditContact}>Add</button>}
+                    </div>
+                  ) : null}
+
+                  {/* Edit / Save contact buttons for staff */}
+                  {isStaff && (
+                    editingContact ? (
+                      <div style={{ display: 'flex', gap: 4, marginTop: 6 }}>
+                        <button className="btn btn-primary btn-xs" onClick={saveContact} disabled={savingContact}>
+                          {savingContact ? 'Saving…' : 'Save'}
+                        </button>
+                        <button className="btn btn-ghost btn-xs" onClick={() => setEditingContact(false)}>Cancel</button>
+                      </div>
+                    ) : (t.createdBy.phone && t.createdBy.organization) ? (
+                      <button type="button" className="btn btn-ghost btn-xs" style={{ marginTop: 4, fontSize: 11 }} onClick={startEditContact}>Edit contact</button>
+                    ) : null
+                  )}
                 </div>
               ) : '—'}
             </MetaRow>
@@ -1006,14 +1155,11 @@ export default function TicketDetail() {
                 {saving ? 'Saving…' : '💾 Save changes'}
               </button>
             )}
-          </div>
+          </CollapsibleCard>
 
           {/* System Info */}
           {isStaff && (
-            <div className="card" style={{ marginTop: 12, position: 'sticky', top: 68 }}>
-              <div className="card-header">
-                <span className="card-title">System Info</span>
-              </div>
+            <CollapsibleCard title="System Info" defaultOpen={false} maxHeight={280} style={{ marginTop: 12 }}>
               {(['systemProduct', 'systemModule', 'systemVersion', 'systemBrowser', 'systemOs'] as const).map((field) => {
                 const labels: Record<string, string> = { systemProduct: 'Product', systemModule: 'Module', systemVersion: 'Version', systemBrowser: 'Browser', systemOs: 'OS' };
                 return (
@@ -1038,7 +1184,7 @@ export default function TicketDetail() {
                   Save changes
                 </button>
               )}
-            </div>
+            </CollapsibleCard>
           )}
 
           {/* Customer Feedback */}
@@ -1084,13 +1230,103 @@ export default function TicketDetail() {
               {t.preventiveAction && <MetaRow label="Preventive Action"><div style={{ fontSize: 13 }}>{t.preventiveAction}</div></MetaRow>}
             </div>
           )}
+
+          {/* Related Tickets */}
+          {isStaff && (
+            <CollapsibleCard
+              title="Related Tickets"
+              defaultOpen={(t.relations?.length ?? 0) > 0}
+              maxHeight={300}
+              style={{ marginTop: 12 }}
+              headerRight={
+                <button
+                  type="button"
+                  className="btn btn-secondary btn-xs"
+                  onClick={() => setShowRelatedSearch((v) => !v)}
+                >
+                  + Link
+                </button>
+              }
+            >
+              {showRelatedSearch && (
+                <div style={{ marginBottom: 10 }}>
+                  <input
+                    type="text"
+                    placeholder="Search tickets to link…"
+                    value={relatedSearch}
+                    onChange={(e) => setRelatedSearch(e.target.value)}
+                    style={{ fontSize: 12, padding: '5px 8px', width: '100%', marginBottom: 4 }}
+                    autoFocus
+                  />
+                  {((relatedResults?.data ?? []) as any[]).filter((r: any) =>
+                    r.id !== id && !(t.relations ?? []).some((rel: any) => rel.related?.id === r.id)
+                  ).length > 0 && (
+                    <div style={{ border: '1px solid var(--border)', borderRadius: 6, overflow: 'hidden', maxHeight: 160, overflowY: 'auto' }}>
+                      {((relatedResults?.data ?? []) as any[]).filter((r: any) =>
+                        r.id !== id && !(t.relations ?? []).some((rel: any) => rel.related?.id === r.id)
+                      ).map((r: any) => (
+                        <button
+                          key={r.id}
+                          type="button"
+                          onClick={() => linkRelated(r.id)}
+                          style={{
+                            display: 'flex', alignItems: 'center', gap: 8, width: '100%',
+                            padding: '7px 10px', background: 'var(--bg)', border: 'none',
+                            borderBottom: '1px solid var(--border)', cursor: 'pointer', textAlign: 'left',
+                          }}
+                        >
+                          <span style={{ fontFamily: 'monospace', fontSize: 11, color: 'var(--text-3)' }}>{r.reference}</span>
+                          <span style={{ fontSize: 12, flex: 1 }}>{r.subject}</span>
+                          <span className={`badge ${r.status}`} style={{ fontSize: 10 }}>{STATUS_LABELS[r.status] ?? r.status}</span>
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {(t.relations?.length ?? 0) === 0 ? (
+                <div className="muted" style={{ fontSize: 12 }}>No related tickets linked.</div>
+              ) : (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+                  {(t.relations ?? []).map((rel: any) => {
+                    const r = rel.related;
+                    if (!r) return null;
+                    return (
+                      <div key={rel.id} style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '5px 0', borderBottom: '1px solid var(--border-faint, #f0f0f0)' }}>
+                        <span style={{ fontFamily: 'monospace', fontSize: 11, color: 'var(--text-3)', whiteSpace: 'nowrap' }}>{r.reference}</span>
+                        <Link
+                          to={`/tickets/${r.id}`}
+                          style={{ fontSize: 12, flex: 1, color: 'var(--text)', textDecoration: 'none' }}
+                          title={r.subject}
+                        >
+                          {r.subject.length > 38 ? r.subject.slice(0, 38) + '…' : r.subject}
+                        </Link>
+                        <span className={`badge ${r.status}`} style={{ fontSize: 10 }}>{STATUS_LABELS[r.status] ?? r.status}</span>
+                        <button
+                          type="button"
+                          className="btn btn-ghost btn-xs"
+                          style={{ color: '#dc2626', padding: '0 4px', flexShrink: 0 }}
+                          onClick={() => unlinkRelated(r.id)}
+                          title="Unlink"
+                        >
+                          ✕
+                        </button>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </CollapsibleCard>
+          )}
         </div>
 
         {/* ── Right: Activity ── */}
-        {t.events?.length > 0 && (
-          <div className="ticket-activity-col">
-            <div className="card" style={{ position: 'sticky', top: 68 }}>
-              <div className="card-header"><span className="card-title">Activity</span></div>
+        <div className="ticket-activity-col">
+          <CollapsibleCard title="Activity" maxHeight={400} style={{ position: 'sticky', top: 68 }}>
+            {(t.events?.length ?? 0) === 0 ? (
+              <div className="muted" style={{ fontSize: 12.5, padding: '8px 0' }}>No activity yet.</div>
+            ) : (
               <div className="timeline">
                 {t.events.map((ev: any) => (
                   <div className="timeline-item" key={ev.id}>
@@ -1107,9 +1343,9 @@ export default function TicketDetail() {
                   </div>
                 ))}
               </div>
-            </div>
-          </div>
-        )}
+            )}
+          </CollapsibleCard>
+        </div>
       </div>
     </div>
   );

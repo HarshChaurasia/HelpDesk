@@ -32,6 +32,12 @@ class UpdateUserDto {
   @IsOptional() @IsString() fullName?: string;
   @IsOptional() @IsEnum(Role) role?: Role;
   @IsOptional() @IsBoolean() isActive?: boolean;
+  @IsOptional() @IsString() phone?: string;
+  @IsOptional() @IsString() organization?: string;
+}
+class UpdateContactDto {
+  @IsOptional() @IsString() phone?: string;
+  @IsOptional() @IsString() organization?: string;
 }
 class NotifPrefDto {
   @IsEnum(NotifChannelPref) notifPref: NotifChannelPref;
@@ -107,6 +113,17 @@ export class UsersController {
   @Roles('ADMIN')
   @Patch(':id')
   async update(@Param('id') id: string, @Body() dto: UpdateUserDto) {
+    return this.safe(
+      await this.prisma.user.update({ where: { id }, data: dto }),
+    );
+  }
+
+  @Roles('AGENT', 'ADMIN')
+  @Patch(':id/contact')
+  async updateContact(
+    @Param('id') id: string,
+    @Body() dto: UpdateContactDto,
+  ) {
     return this.safe(
       await this.prisma.user.update({ where: { id }, data: dto }),
     );

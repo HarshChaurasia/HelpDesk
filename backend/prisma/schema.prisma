@@ -211,6 +211,18 @@ model TicketFeedback {
   submittedAt DateTime @default(now())
 }
 
+model TicketRelation {
+  id        String   @id @default(uuid())
+  ticketId  String
+  ticket    Ticket   @relation("TicketRelations", fields: [ticketId], references: [id], onDelete: Cascade)
+  relatedId String
+  related   Ticket   @relation("RelatedTickets", fields: [relatedId], references: [id], onDelete: Cascade)
+  createdAt DateTime @default(now())
+
+  @@unique([ticketId, relatedId])
+  @@index([ticketId])
+}
+
 model TicketCC {
   id        String   @id @default(uuid())
   ticketId  String
@@ -287,6 +299,8 @@ model Ticket {
   feedback       TicketFeedback?
   escalation     Escalation?
   changeRequest  ChangeRequest?
+  relations      TicketRelation[] @relation("TicketRelations")
+  relatedTo      TicketRelation[] @relation("RelatedTickets")
 
   @@index([status])
   @@index([assignedToId, status])

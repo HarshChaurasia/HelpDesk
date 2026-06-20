@@ -9,10 +9,17 @@ export const STATUS_LABELS: Record<string, string> = {
 };
 
 export const PRIORITY_LABELS: Record<string, string> = {
-  LOW: 'Low',
-  MEDIUM: 'Medium',
-  HIGH: 'High',
-  URGENT: 'Urgent',
+  LOW: 'P4 – Low',
+  MEDIUM: 'P3 – Medium',
+  HIGH: 'P2 – High',
+  URGENT: 'P1 – Urgent',
+};
+
+export const PRIORITY_SHORT: Record<string, string> = {
+  LOW: 'P4',
+  MEDIUM: 'P3',
+  HIGH: 'P2',
+  URGENT: 'P1',
 };
 
 const AVATAR_COLORS = [

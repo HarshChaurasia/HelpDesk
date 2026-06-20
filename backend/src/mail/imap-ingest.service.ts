@@ -224,7 +224,13 @@ export class ImapIngestService {
               parsed.headers.get('auto-submitted') ||
               parsed.headers.get('x-autoreply')
             );
-            const isSystemNotification = !!parsed.headers.get('x-helpdesk-notification');
+            const systemFromEmail = (process.env.MAIL_FROM || 'support@helpdesk.local')
+              .replace(/.*<(.+)>.*/, '$1')
+              .toLowerCase();
+            const isSystemNotification = !!(
+              parsed.headers.get('x-helpdesk-notification') ||
+              (from?.address?.toLowerCase() === systemFromEmail)
+            );
 
             const result = await this.processEmailMessage({
               messageId,

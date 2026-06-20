@@ -94,6 +94,28 @@ export class TicketsController {
     res.send('﻿' + csv);
   }
 
+  @Get('export-xlsx')
+  async exportXlsx(@CurrentUser() user: AuthUser, @Query() q: any, @Res() res: Response) {
+    const buf = await this.tickets.exportXlsx(user, q);
+    const filename = `tickets-${new Date().toISOString().slice(0, 10)}.xlsx`;
+    res.set({
+      'Content-Type': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+      'Content-Disposition': `attachment; filename="${filename}"`,
+    });
+    res.send(buf);
+  }
+
+  @Get(':id/pdf')
+  async downloadPdf(@Param('id') id: string, @CurrentUser() user: AuthUser, @Res() res: Response) {
+    const buf = await this.tickets.generatePdf(id, user);
+    res.set({
+      'Content-Type': 'application/pdf',
+      'Content-Disposition': `attachment; filename="ticket-${id}.pdf"`,
+      'Content-Length': buf.length,
+    });
+    res.send(buf);
+  }
+
   @Get(':id')
   get(@Param('id') id: string, @CurrentUser() user: AuthUser) {
     return this.tickets.getOne(id, user);
@@ -214,6 +236,18 @@ export class TicketsController {
   @Post(':id/merge')
   merge(@Param('id') id: string, @Body() dto: MergeDto, @CurrentUser() user: AuthUser) {
     return this.tickets.mergeTickets(id, dto.targetId, user);
+  }
+
+  @Roles('AGENT', 'ADMIN')
+  @Post(':id/related')
+  addRelated(@Param('id') id: string, @Body() body: { relatedId: string }, @CurrentUser() user: AuthUser) {
+    return this.tickets.addRelated(id, body.relatedId, user);
+  }
+
+  @Roles('AGENT', 'ADMIN')
+  @Delete(':id/related/:relatedId')
+  removeRelated(@Param('id') id: string, @Param('relatedId') relatedId: string, @CurrentUser() user: AuthUser) {
+    return this.tickets.removeRelated(id, relatedId, user);
   }
 
   @Post(':id/feedback')

@@ -16,6 +16,8 @@ import {
   Role,
 } from '@prisma/client';
 import * as argon2 from 'argon2';
+import * as XLSX from 'xlsx';
+import PDFDocument from 'pdfkit';
 import { randomBytes } from 'crypto';
 import { unlinkSync } from 'fs';
 import { join } from 'path';
@@ -243,6 +245,13 @@ export class TicketsService {
       where: { reference },
     });
     if (!ticket) return null;
+
+    // Secondary dedup: if this sourceMessageId was already stored, return idempotently
+    const existing = await this.prisma.message.findFirst({
+      where: { ticketId: ticket.id, sourceMessageId },
+    });
+    if (existing) return { ticketId: ticket.id, messageId: existing.id };
+
     const sender = await this.prisma.user.findUnique({
       where: { email: fromEmail },
     });
@@ -356,6 +365,8 @@ export class TicketsService {
       priority: { priority: sortDir },
       status: { status: sortDir },
       reference: { reference: sortDir },
+      subject: { subject: sortDir },
+      category: { category: { name: sortDir } },
     };
     const orderBy = allowedSorts[sortField] ?? { createdAt: 'desc' };
     const [data, total] = await this.prisma.$transaction([
@@ -468,6 +479,37 @@ export class TicketsService {
     return { targetId, targetReference: target.reference };
   }
 
+  async addRelated(ticketId: string, relatedId: string, user: AuthUser) {
+    await this.assertAccess(ticketId, user);
+    if (ticketId === relatedId) throw new BadRequestException('Cannot link a ticket to itself');
+    const [a, b] = await this.prisma.$transaction([
+      this.prisma.ticket.findUnique({ where: { id: ticketId } }),
+      this.prisma.ticket.findUnique({ where: { id: relatedId } }),
+    ]);
+    if (!a || !b) throw new NotFoundException('Ticket not found');
+    await this.prisma.$transaction([
+      this.prisma.ticketRelation.upsert({
+        where: { ticketId_relatedId: { ticketId, relatedId } },
+        update: {},
+        create: { ticketId, relatedId },
+      }),
+      this.prisma.ticketRelation.upsert({
+        where: { ticketId_relatedId: { ticketId: relatedId, relatedId: ticketId } },
+        update: {},
+        create: { ticketId: relatedId, relatedId: ticketId },
+      }),
+    ]);
+    return { ok: true };
+  }
+
+  async removeRelated(ticketId: string, relatedId: string, user: AuthUser) {
+    await this.assertAccess(ticketId, user);
+    await this.prisma.ticketRelation.deleteMany({
+      where: { OR: [{ ticketId, relatedId }, { ticketId: relatedId, relatedId: ticketId }] },
+    });
+    return { ok: true };
+  }
+
   async submitFeedback(ticketId: string, rating: number, comment: string | undefined, user: AuthUser) {
     const ticket = await this.prisma.ticket.findUnique({ where: { id: ticketId } });
     if (!ticket) throw new NotFoundException('Ticket not found');
@@ -556,6 +598,66 @@ export class TicketsService {
     return [headers.join(','), ...rows].join('\r\n');
   }
 
+  async exportXlsx(user: AuthUser, q: any): Promise<Buffer> {
+    const where: any = {};
+    if (user.role === Role.CUSTOMER) {
+      where.OR = [
+        { createdById: user.id },
+        { watchers: { some: { userId: user.id } } },
+      ];
+    } else {
+      if (q.mine === 'true') where.assignedToId = user.id;
+      if (q.assignedToId) where.assignedToId = q.assignedToId;
+    }
+    if (q.status) where.status = Array.isArray(q.status) ? { in: q.status } : q.status;
+    if (q.priority) where.priority = Array.isArray(q.priority) ? { in: q.priority } : q.priority;
+    if (q.categoryId) where.categoryId = q.categoryId;
+    if (q.q) {
+      where.AND = [{
+        OR: [
+          { subject: { contains: q.q, mode: 'insensitive' } },
+          { reference: { contains: q.q, mode: 'insensitive' } },
+        ],
+      }];
+    }
+    const tickets = await this.prisma.ticket.findMany({
+      where,
+      include: {
+        category: { select: { name: true } },
+        subcategory: { select: { name: true } },
+        assignedTo: { select: { fullName: true } },
+        createdBy: { select: { fullName: true, email: true } },
+      },
+      orderBy: { createdAt: 'desc' },
+      take: 10000,
+    });
+
+    const rows = tickets.map((t) => ({
+      'Ticket No.':     t.reference,
+      Subject:          t.subject,
+      Status:           t.status,
+      Priority:         t.priority,
+      Category:         t.category?.name ?? '',
+      Subcategory:      t.subcategory?.name ?? '',
+      Customer:         t.createdBy.fullName,
+      'Customer Email': t.createdBy.email,
+      Assignee:         t.assignedTo?.fullName ?? '',
+      'SLA Breached':   t.slaBreached ? 'Yes' : 'No',
+      'Resolution Due': t.slaResolutionDueAt?.toISOString() ?? '',
+      Created:          t.createdAt.toISOString(),
+      Updated:          t.updatedAt.toISOString(),
+    }));
+
+    const ws = XLSX.utils.json_to_sheet(rows);
+    // Auto column widths
+    const colWidths = Object.keys(rows[0] ?? {}).map((k) => ({ wch: Math.max(k.length, 14) }));
+    ws['!cols'] = colWidths;
+
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, 'Tickets');
+    return XLSX.write(wb, { type: 'buffer', bookType: 'xlsx' }) as Buffer;
+  }
+
   async getOne(id: string, user: AuthUser) {
     await this.assertAccess(id, user);
     const ticket = await this.prisma.ticket.findUnique({
@@ -569,6 +671,7 @@ export class TicketsService {
         watchers: { include: { user: { select: { id: true, fullName: true } } } },
         attachments: { orderBy: { createdAt: 'asc' } },
         messages: {
+          where: { deletedAt: null },
           orderBy: { createdAt: 'asc' },
           include: {
             author: { select: { id: true, fullName: true, role: true } },
@@ -589,6 +692,7 @@ export class TicketsService {
         feedback: true,
         escalation: { include: { escalatedBy: { select: { id: true, fullName: true } } } },
         changeRequest: true,
+        relations: { include: { related: { select: { id: true, reference: true, subject: true, status: true, priority: true } } } },
       },
     });
     if (!ticket) throw new NotFoundException();
@@ -919,5 +1023,128 @@ export class TicketsService {
       await this.assertAccess(attachment.ticketId, user);
     }
     return attachment;
+  }
+
+  async generatePdf(ticketId: string, user: AuthUser): Promise<Buffer> {
+    const ticket = await this.getOne(ticketId, user);
+
+    return new Promise((resolve, reject) => {
+      const doc = new PDFDocument({ margin: 50, size: 'A4' });
+      const chunks: Buffer[] = [];
+      doc.on('data', (c: Buffer) => chunks.push(c));
+      doc.on('end', () => resolve(Buffer.concat(chunks)));
+      doc.on('error', reject);
+
+      const GRAY = '#6b7280';
+      const DARK = '#111827';
+      const LINE = '#e5e7eb';
+
+      function section(title: string) {
+        doc.moveDown(0.6);
+        doc.fontSize(9).fillColor(GRAY).text(title.toUpperCase(), { characterSpacing: 1 });
+        doc.moveDown(0.15);
+        doc.moveTo(50, doc.y).lineTo(545, doc.y).strokeColor(LINE).lineWidth(0.5).stroke();
+        doc.moveDown(0.25);
+      }
+
+      function row(label: string, value: string | null | undefined) {
+        if (!value) return;
+        doc.fontSize(9).fillColor(GRAY).text(label + ':', { continued: false, indent: 0 });
+        doc.moveUp(1);
+        doc.fontSize(9).fillColor(DARK).text(value, { indent: 110, align: 'left' });
+        doc.moveDown(0.15);
+      }
+
+      // Header
+      doc.fontSize(18).fillColor(DARK).text(`Ticket ${ticket.reference}`, { align: 'left' });
+      doc.fontSize(12).fillColor(GRAY).text(ticket.subject, { align: 'left' });
+      doc.moveDown(0.4);
+
+      // Status badges line
+      doc.fontSize(9).fillColor(GRAY).text(
+        `Status: ${ticket.status}  |  Priority: ${ticket.priority}  |  Channel: ${ticket.channel}` +
+        (ticket.slaBreached ? '  |  SLA: BREACHED' : ''),
+      );
+      doc.moveDown(0.3);
+
+      // Customer
+      section('Customer');
+      const cb = ticket.createdBy as any;
+      if (cb) {
+        row('Name', cb.fullName);
+        row('Email', cb.email);
+        row('Phone', cb.phone);
+        row('Organization', cb.organization);
+      }
+
+      // Ticket Info
+      section('Ticket Details');
+      row('Ticket No.', ticket.reference);
+      row('Category', (ticket as any).category?.name ?? null);
+      row('Subcategory', (ticket as any).subcategory?.name ?? null);
+      row('Assigned To', (ticket as any).assignees?.length
+        ? (ticket as any).assignees.map((a: any) => a.user?.fullName ?? '').join(', ')
+        : (ticket as any).assignedTo?.fullName ?? null);
+      row('Created', new Date(ticket.createdAt).toLocaleString());
+      row('Updated', new Date(ticket.updatedAt).toLocaleString());
+      row('Resolved', ticket.resolvedAt ? new Date(ticket.resolvedAt).toLocaleString() : null);
+      row('Delivery Date', ticket.deliveryDate ? new Date(ticket.deliveryDate).toLocaleString() : null);
+      if ((ticket as any).slaResolutionDueAt) row('SLA Resolution Due', new Date((ticket as any).slaResolutionDueAt).toLocaleString());
+      if ((ticket as any).tags?.length) row('Tags', (ticket as any).tags.map((t: any) => t.tag?.name).filter(Boolean).join(', '));
+
+      // System Info
+      const sys = ticket as any;
+      if (sys.systemProduct || sys.systemModule || sys.systemBrowser || sys.systemOs) {
+        section('System Info');
+        row('Product', sys.systemProduct);
+        row('Module', sys.systemModule);
+        row('Version', sys.systemVersion);
+        row('Browser', sys.systemBrowser);
+        row('OS', sys.systemOs);
+      }
+
+      // Resolution
+      if (ticket.resolutionSummary || ticket.rootCause) {
+        section('Resolution');
+        row('Summary', ticket.resolutionSummary);
+        row('Root Cause', ticket.rootCause);
+        row('Corrective Action', ticket.correctiveAction);
+        row('Preventive Action', ticket.preventiveAction);
+      }
+
+      // Time Tracking
+      const timeLogs: any[] = (ticket as any).timeLogs ?? [];
+      if (timeLogs.length > 0) {
+        section('Time Tracking');
+        const byType: Record<string, number> = {};
+        let total = 0;
+        for (const tl of timeLogs) { byType[tl.type] = (byType[tl.type] ?? 0) + tl.hours; total += tl.hours; }
+        for (const [type, hours] of Object.entries(byType)) row(type.charAt(0) + type.slice(1).toLowerCase(), `${hours}h`);
+        row('Total', `${total}h`);
+      }
+
+      // Messages
+      const messages: any[] = (ticket as any).messages?.filter((m: any) => !m.deletedAt) ?? [];
+      if (messages.length > 0) {
+        section('Conversation');
+        for (const m of messages) {
+          const author = m.author?.fullName ?? 'System';
+          const when = new Date(m.createdAt).toLocaleString();
+          const typeLabel = m.type === 'INTERNAL_NOTE' ? ' [Internal]' : '';
+          doc.fontSize(8.5).fillColor(GRAY).text(`${author} · ${when}${typeLabel}`);
+          const plain = (m.body ?? '').replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim();
+          doc.fontSize(9).fillColor(DARK).text(plain.length > 600 ? plain.slice(0, 600) + '…' : plain, { indent: 0 });
+          doc.moveDown(0.4);
+        }
+      }
+
+      // Footer
+      doc.fontSize(8).fillColor(GRAY).text(
+        `Generated ${new Date().toLocaleString()} — HelpDesk`,
+        50, 790, { align: 'center' },
+      );
+
+      doc.end();
+    });
   }
 }

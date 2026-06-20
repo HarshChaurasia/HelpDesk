@@ -1,9 +1,9 @@
 import { useQuery, useQueryClient, useMutation } from '@tanstack/react-query';
-import { Link } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 import { useState, useMemo } from 'react';
 import { api } from '../api';
 import { useAuth } from '../auth';
-import { STATUS_LABELS, PRIORITY_LABELS, avatarInitials, avatarStyle, relativeTime } from '../utils';
+import { STATUS_LABELS, PRIORITY_LABELS, PRIORITY_SHORT, avatarInitials, avatarStyle, relativeTime } from '../utils';
 
 const STATUS_OPTIONS = ['NEW', 'OPEN', 'IN_PROGRESS', 'PENDING_CUSTOMER', 'RESOLVED', 'CLOSED', 'REOPENED'];
 const PRIORITY_OPTIONS = ['LOW', 'MEDIUM', 'HIGH', 'URGENT'];
@@ -27,11 +27,29 @@ function Avatar({ name }: { name: string }) {
   );
 }
 
-type SortField = 'reference' | 'createdAt' | 'updatedAt' | 'priority' | 'status';
+const CLOSED_STATUSES = new Set(['RESOLVED', 'CLOSED']);
+
+function SlaStatusBadge({ ticket }: { ticket: any }) {
+  if (CLOSED_STATUSES.has(ticket.status)) return null;
+  if (ticket.slaBreached) {
+    return <span className="sla-badge sla-breached">Breached</span>;
+  }
+  const due = ticket.slaResolutionDueAt ? new Date(ticket.slaResolutionDueAt).getTime() : null;
+  if (due && due - Date.now() < 2 * 60 * 60 * 1000) {
+    return <span className="sla-badge sla-at-risk">At Risk</span>;
+  }
+  if (ticket.slaResolutionDueAt) {
+    return <span className="sla-badge sla-ok">On Track</span>;
+  }
+  return null;
+}
+
+type SortField = 'reference' | 'subject' | 'createdAt' | 'updatedAt' | 'priority' | 'status' | 'category';
 
 export default function Tickets() {
   const { user } = useAuth();
   const qc = useQueryClient();
+  const navigate = useNavigate();
 
   // Filters
   const [search, setSearch] = useState('');
@@ -127,6 +145,15 @@ export default function Tickets() {
     });
   }
 
+  async function quickResolve(id: string) {
+    try {
+      await api.post(`/tickets/${id}/status`, { status: 'RESOLVED' });
+      qc.invalidateQueries({ queryKey: ['tickets'] });
+    } catch (e: any) {
+      alert(e.response?.data?.error?.message ?? 'Failed to resolve ticket');
+    }
+  }
+
   async function runBulk() {
     if (!bulkAction || selected.size === 0) return;
     const ids = Array.from(selected);
@@ -146,6 +173,16 @@ export default function Tickets() {
     const a = document.createElement('a');
     a.href = url;
     a.download = `tickets-${new Date().toISOString().slice(0, 10)}.csv`;
+    a.click();
+    URL.revokeObjectURL(url);
+  }
+
+  async function exportXlsx() {
+    const res = await api.get('/tickets/export-xlsx', { params: queryParams, responseType: 'blob' });
+    const url = URL.createObjectURL(res.data);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `tickets-${new Date().toISOString().slice(0, 10)}.xlsx`;
     a.click();
     URL.revokeObjectURL(url);
   }
@@ -191,7 +228,7 @@ export default function Tickets() {
   const activeFilterCount = (statusFilter.length > 0 ? 1 : 0) + (priorityFilter.length > 0 ? 1 : 0) + (categoryId ? 1 : 0);
 
   return (
-    <div>
+    <div style={{ display: 'flex', flexDirection: 'column', flex: 1, minHeight: 0, overflow: 'hidden' }}>
       {/* Header */}
       <div className="page-header">
         <div>
@@ -207,7 +244,8 @@ export default function Tickets() {
               </button>
             </>
           )}
-          <button className="btn btn-secondary btn-sm" onClick={exportCsv}>↓ Export CSV</button>
+          <button className="btn btn-secondary btn-sm" onClick={exportCsv}>↓ CSV</button>
+          <button className="btn btn-secondary btn-sm" onClick={exportXlsx}>↓ XLSX</button>
           <Link to="/tickets/new" className="btn btn-primary btn-sm">+ New Ticket</Link>
         </div>
       </div>
@@ -373,7 +411,7 @@ export default function Tickets() {
 
       {/* Table */}
       {isLoading ? (
-        <div style={{ padding: 40, textAlign: 'center', color: 'var(--text-3)', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 10 }}>
+        <div style={{ flex: 1, padding: 40, textAlign: 'center', color: 'var(--text-3)', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 10 }}>
           <span className="spinner" /> Loading tickets…
         </div>
       ) : isError ? (
@@ -382,7 +420,7 @@ export default function Tickets() {
           <a href="javascript:void(0)" onClick={() => window.location.reload()}>Retry</a>
         </div>
       ) : (
-        <div className="table-wrap">
+        <div className="table-wrap" style={{ flex: 1, overflowY: 'auto', minHeight: 0 }}>
           <table>
             <thead>
               <tr>
@@ -394,14 +432,19 @@ export default function Tickets() {
                 <th className="sortable" onClick={() => toggleSort('reference')}>
                   Ticket No. <SortIcon field="reference" />
                 </th>
-                <th>Subject</th>
+                <th className="sortable" onClick={() => toggleSort('subject')}>
+                  Subject <SortIcon field="subject" />
+                </th>
                 <th className="sortable" onClick={() => toggleSort('status')}>
                   Status <SortIcon field="status" />
                 </th>
                 <th className="sortable" onClick={() => toggleSort('priority')}>
                   Priority <SortIcon field="priority" />
                 </th>
-                <th>Category</th>
+                <th>SLA</th>
+                <th className="sortable" onClick={() => toggleSort('category')}>
+                  Category <SortIcon field="category" />
+                </th>
                 <th>Customer</th>
                 {isStaff && <th>Assignee</th>}
                 <th className="sortable" onClick={() => toggleSort('createdAt')}>
@@ -410,12 +453,13 @@ export default function Tickets() {
                 <th className="sortable" onClick={() => toggleSort('updatedAt')}>
                   Updated <SortIcon field="updatedAt" />
                 </th>
+                <th style={{ width: 130 }}>Actions</th>
               </tr>
             </thead>
             <tbody>
               {tickets.length === 0 ? (
                 <tr>
-                  <td colSpan={isStaff ? 10 : 8}>
+                  <td colSpan={isStaff ? 12 : 10}>
                     <div className="empty-state">
                       <div className="empty-state-icon">🎫</div>
                       <div className="empty-state-title">No tickets found</div>
@@ -455,9 +499,10 @@ export default function Tickets() {
                     <td>
                       <div style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
                         <span className={`priority-dot ${t.priority}`} />
-                        <span className={`badge ${t.priority}`}>{PRIORITY_LABELS[t.priority] ?? t.priority}</span>
+                        <span className={`badge ${t.priority}`} title={PRIORITY_LABELS[t.priority]}>{PRIORITY_SHORT[t.priority] ?? t.priority}</span>
                       </div>
                     </td>
+                    <td><SlaStatusBadge ticket={t} /></td>
                     <td style={{ fontSize: 12.5, color: 'var(--text-2)' }}>
                       {t.category?.name ?? <span className="muted">—</span>}
                       {t.subcategory && <span style={{ color: 'var(--text-3)' }}> / {t.subcategory.name}</span>}
@@ -482,6 +527,27 @@ export default function Tickets() {
                     )}
                     <td><AgeBadge createdAt={t.createdAt} /></td>
                     <td className="muted" style={{ fontSize: 12 }}>{relativeTime(t.updatedAt)}</td>
+                    <td style={{ whiteSpace: 'nowrap' }}>
+                      <div className="row-actions">
+                        <button
+                          className="btn btn-ghost btn-xs"
+                          title="View ticket"
+                          onClick={() => navigate(`/tickets/${t.id}`)}
+                        >View</button>
+                        <button
+                          className="btn btn-ghost btn-xs"
+                          title="Add comment"
+                          onClick={() => navigate(`/tickets/${t.id}#compose`)}
+                        >Comment</button>
+                        {isStaff && !['RESOLVED', 'CLOSED'].includes(t.status) && (
+                          <button
+                            className="btn btn-ghost btn-xs"
+                            title="Resolve ticket"
+                            onClick={() => quickResolve(t.id)}
+                          >Resolve</button>
+                        )}
+                      </div>
+                    </td>
                   </tr>
                 ))
               )}
