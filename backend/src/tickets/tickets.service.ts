@@ -377,6 +377,25 @@ export class TicketsService {
     return { data, meta: { page, limit, total } };
   }
 
+  async escalate(ticketId: string, level: number, reason: string, user: AuthUser) {
+    const ticket = await this.prisma.ticket.findUnique({ where: { id: ticketId } });
+    if (!ticket) throw new NotFoundException('Ticket not found');
+    return this.prisma.escalation.upsert({
+      where: { ticketId },
+      update: { level, reason, resolvedAt: null, escalatedById: user.id, updatedAt: new Date() },
+      create: { ticketId, level, reason, escalatedById: user.id },
+    });
+  }
+
+  async deEscalate(ticketId: string, user: AuthUser) {
+    const esc = await this.prisma.escalation.findUnique({ where: { ticketId } });
+    if (!esc) throw new NotFoundException('No active escalation found');
+    return this.prisma.escalation.update({
+      where: { ticketId },
+      data: { resolvedAt: new Date() },
+    });
+  }
+
   async mergeTickets(sourceId: string, targetId: string, user: AuthUser) {
     if (sourceId === targetId) throw new BadRequestException('Cannot merge a ticket into itself');
     const [source, target] = await Promise.all([
@@ -543,6 +562,7 @@ export class TicketsService {
         },
         ccRecipients: { orderBy: { addedAt: 'asc' }, include: { addedBy: { select: { id: true, fullName: true } } } },
         feedback: true,
+        escalation: { include: { escalatedBy: { select: { id: true, fullName: true } } } },
       },
     });
     if (!ticket) throw new NotFoundException();

@@ -108,6 +108,11 @@ export default function TicketDetail() {
   // CC
   const [ccInput, setCcInput] = useState('');
 
+  // Escalation
+  const [showEscalate, setShowEscalate] = useState(false);
+  const [escalateLevel, setEscalateLevel] = useState(1);
+  const [escalateReason, setEscalateReason] = useState('');
+
   // Merge
   const [showMerge, setShowMerge] = useState(false);
   const [mergeSearch, setMergeSearch] = useState('');
@@ -229,6 +234,20 @@ export default function TicketDetail() {
     refresh();
   }
 
+  async function doEscalate() {
+    if (!escalateReason.trim()) return;
+    await api.post(`/tickets/${id}/escalate`, { level: escalateLevel, reason: escalateReason.trim() });
+    setShowEscalate(false);
+    setEscalateReason('');
+    refresh();
+  }
+
+  async function doDeEscalate() {
+    if (!confirm('Remove the escalation on this ticket?')) return;
+    await api.post(`/tickets/${id}/de-escalate`);
+    refresh();
+  }
+
   const { data: mergeResults } = useQuery({
     queryKey: ['tickets-merge-search', mergeSearch],
     queryFn: async () => {
@@ -299,6 +318,11 @@ export default function TicketDetail() {
           <span className={`badge ${t.status}`}>{STATUS_LABELS[t.status] ?? t.status}</span>
           <span className={`badge ${t.priority}`}>{PRIORITY_LABELS[t.priority] ?? t.priority}</span>
           {t.slaBreached && <span className="badge" style={{ background: '#fee2e2', color: '#b91c1c' }}>SLA Breached</span>}
+          {t.escalation && !t.escalation.resolvedAt && (
+            <span className="badge" style={{ background: '#fef3c7', color: '#b45309' }}>
+              🔺 Escalated L{t.escalation.level}
+            </span>
+          )}
           {t.noAutoClose && <span className="badge" style={{ background: '#f3f4f6', color: '#6b7280' }}>No Auto-Close</span>}
         </div>
         <div className="ticket-subject">{t.subject}</div>
@@ -326,6 +350,13 @@ export default function TicketDetail() {
             )}
             {t.status !== 'CLOSED' && (
               <button type="button" className="btn btn-secondary btn-xs" onClick={() => setShowMerge(true)}>⇄ Merge into…</button>
+            )}
+            {!t.escalation?.resolvedAt && !t.escalation ? (
+              <button type="button" className="btn btn-secondary btn-xs" style={{ color: '#b45309' }} onClick={() => setShowEscalate(true)}>🔺 Escalate</button>
+            ) : t.escalation && !t.escalation.resolvedAt ? (
+              <button type="button" className="btn btn-secondary btn-xs" onClick={doDeEscalate}>✓ De-escalate</button>
+            ) : (
+              <button type="button" className="btn btn-secondary btn-xs" style={{ color: '#b45309' }} onClick={() => setShowEscalate(true)}>🔺 Escalate</button>
             )}
           </div>
         )}
@@ -427,6 +458,56 @@ export default function TicketDetail() {
               <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
                 <button className="btn btn-secondary btn-sm" onClick={() => setShowMerge(false)}>Cancel</button>
                 <button className="btn btn-primary btn-sm" disabled={!mergeTarget} onClick={doMerge}>Merge</button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Escalation modal */}
+      {showEscalate && (
+        <div className="preview-overlay" onClick={() => setShowEscalate(false)}>
+          <div className="preview-modal" style={{ maxWidth: 440 }} onClick={(e) => e.stopPropagation()}>
+            <div className="preview-modal-header">
+              <span style={{ fontSize: 14, fontWeight: 600 }}>Escalate ticket</span>
+              <button className="btn btn-ghost btn-xs" onClick={() => setShowEscalate(false)}>✕</button>
+            </div>
+            <div style={{ padding: '16px 20px', display: 'flex', flexDirection: 'column', gap: 12 }}>
+              <div className="form-group" style={{ marginBottom: 0 }}>
+                <label className="form-label">Escalation Level</label>
+                <div style={{ display: 'flex', gap: 8 }}>
+                  {[1, 2, 3].map((n) => (
+                    <button
+                      key={n}
+                      type="button"
+                      onClick={() => setEscalateLevel(n)}
+                      style={{
+                        flex: 1, padding: '6px 0', borderRadius: 6, cursor: 'pointer',
+                        border: '1px solid var(--border)',
+                        background: escalateLevel === n ? '#b45309' : 'var(--bg)',
+                        color: escalateLevel === n ? '#fff' : 'var(--text)',
+                        fontWeight: 600, fontSize: 13,
+                      }}
+                    >
+                      L{n} {['Low', 'Medium', 'Critical'][n - 1]}
+                    </button>
+                  ))}
+                </div>
+              </div>
+              <div className="form-group" style={{ marginBottom: 0 }}>
+                <label className="form-label">Reason <span style={{ color: '#ef4444' }}>*</span></label>
+                <textarea
+                  rows={3}
+                  placeholder="Describe why this ticket is being escalated…"
+                  value={escalateReason}
+                  onChange={(e) => setEscalateReason(e.target.value)}
+                />
+              </div>
+              <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
+                <button className="btn btn-secondary btn-sm" onClick={() => setShowEscalate(false)}>Cancel</button>
+                <button className="btn btn-primary btn-sm" disabled={!escalateReason.trim()} onClick={doEscalate}>
+                  Escalate
+                </button>
               </div>
             </div>
           </div>

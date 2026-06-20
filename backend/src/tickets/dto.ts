@@ -94,6 +94,11 @@ export class MergeDto {
   @IsUUID() targetId: string;
 }
 
+export class EscalateDto {
+  @IsInt() @Min(1) @Max(3) level: number;
+  @IsString() @MinLength(1) reason: string;
+}
+
 export class FeedbackDto {
   @IsInt() @Min(1) @Max(5) rating: number;
   @IsOptional() @IsString() comment?: string;

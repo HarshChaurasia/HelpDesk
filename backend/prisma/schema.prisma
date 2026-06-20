@@ -98,6 +98,7 @@ model User {
   timeLogs        TicketTimeLog[]  @relation("TimeLogUser")
   ccAdded         TicketCC[]       @relation("CCAddedBy")
   savedViews      SavedView[]
+  escalations     Escalation[]     @relation("EscalatedBy")
 }
 
 model SlaPolicy {
@@ -150,6 +151,19 @@ model TicketTag {
 
   @@id([ticketId, tagId])
   @@index([ticketId])
+}
+
+model Escalation {
+  id             String    @id @default(uuid())
+  ticketId       String    @unique
+  ticket         Ticket    @relation(fields: [ticketId], references: [id], onDelete: Cascade)
+  escalatedById  String
+  escalatedBy    User      @relation("EscalatedBy", fields: [escalatedById], references: [id])
+  level          Int       @default(1)
+  reason         String
+  resolvedAt     DateTime?
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
 }
 
 model SavedView {
@@ -247,6 +261,7 @@ model Ticket {
   timeLogs      TicketTimeLog[]
   ccRecipients  TicketCC[]
   feedback      TicketFeedback?
+  escalation    Escalation?
 
   @@index([status])
   @@index([assignedToId, status])

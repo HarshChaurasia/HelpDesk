@@ -34,6 +34,7 @@ import {
   CcDto,
   FeedbackDto,
   MergeDto,
+  EscalateDto,
 } from './dto';
 import { ApiTags, ApiBearerAuth } from '@nestjs/swagger';
 import { Roles, CurrentUser, AuthUser } from '../common/decorators';
@@ -188,6 +189,18 @@ export class TicketsController {
     @CurrentUser() user: AuthUser,
   ) {
     return this.tickets.removeWatcher(id, userId, user);
+  }
+
+  @Roles('AGENT', 'ADMIN')
+  @Post(':id/escalate')
+  escalate(@Param('id') id: string, @Body() dto: EscalateDto, @CurrentUser() user: AuthUser) {
+    return this.tickets.escalate(id, dto.level, dto.reason, user);
+  }
+
+  @Roles('AGENT', 'ADMIN')
+  @Post(':id/de-escalate')
+  deEscalate(@Param('id') id: string, @CurrentUser() user: AuthUser) {
+    return this.tickets.deEscalate(id, user);
   }
 
   @Roles('AGENT', 'ADMIN')
