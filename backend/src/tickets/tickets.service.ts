@@ -377,6 +377,22 @@ export class TicketsService {
     return { data, meta: { page, limit, total } };
   }
 
+  async addCC(ticketId: string, email: string, user: AuthUser) {
+    await this.assertAccess(ticketId, user);
+    const cc = await this.prisma.ticketCC.upsert({
+      where: { ticketId_email: { ticketId, email } },
+      update: {},
+      create: { ticketId, email, addedById: user.id },
+    });
+    return cc;
+  }
+
+  async removeCC(ticketId: string, email: string, user: AuthUser) {
+    await this.assertAccess(ticketId, user);
+    await this.prisma.ticketCC.deleteMany({ where: { ticketId, email } });
+    return { removed: true };
+  }
+
   async exportCsv(user: AuthUser, q: any): Promise<string> {
     const where: any = {};
     if (user.role === Role.CUSTOMER) {
@@ -464,6 +480,7 @@ export class TicketsService {
           orderBy: { loggedAt: 'asc' },
           include: { user: { select: { id: true, fullName: true } } },
         },
+        ccRecipients: { orderBy: { addedAt: 'asc' }, include: { addedBy: { select: { id: true, fullName: true } } } },
       },
     });
     if (!ticket) throw new NotFoundException();

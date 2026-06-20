@@ -31,6 +31,7 @@ import {
   TimeLogDto,
   TagToggleDto,
   BulkActionDto,
+  CcDto,
 } from './dto';
 import { ApiTags, ApiBearerAuth } from '@nestjs/swagger';
 import { Roles, CurrentUser, AuthUser } from '../common/decorators';
@@ -185,6 +186,22 @@ export class TicketsController {
     @CurrentUser() user: AuthUser,
   ) {
     return this.tickets.removeWatcher(id, userId, user);
+  }
+
+  @Roles('AGENT', 'ADMIN')
+  @Post(':id/cc')
+  addCC(@Param('id') id: string, @Body() dto: CcDto, @CurrentUser() user: AuthUser) {
+    return this.tickets.addCC(id, dto.email, user);
+  }
+
+  @Roles('AGENT', 'ADMIN')
+  @Delete(':id/cc/:email')
+  removeCC(
+    @Param('id') id: string,
+    @Param('email') email: string,
+    @CurrentUser() user: AuthUser,
+  ) {
+    return this.tickets.removeCC(id, decodeURIComponent(email), user);
   }
 
   @Post(':id/attachments')

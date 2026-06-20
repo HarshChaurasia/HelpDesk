@@ -105,6 +105,9 @@ export default function TicketDetail() {
   // Resolution/RCA panel
   const [showResolution, setShowResolution] = useState(false);
 
+  // CC
+  const [ccInput, setCcInput] = useState('');
+
   // Tag input
   const [tagInput, setTagInput] = useState('');
 
@@ -205,6 +208,18 @@ export default function TicketDetail() {
 
   async function toggleTag(tagId: string) {
     await api.post(`/tickets/${id}/tags`, { tagId });
+    refresh();
+  }
+
+  async function addCC() {
+    if (!ccInput.trim()) return;
+    await api.post(`/tickets/${id}/cc`, { email: ccInput.trim() });
+    setCcInput('');
+    refresh();
+  }
+
+  async function removeCC(email: string) {
+    await api.delete(`/tickets/${id}/cc/${encodeURIComponent(email)}`);
     refresh();
   }
 
@@ -496,6 +511,35 @@ export default function TicketDetail() {
                 </div>
               ) : '—'}
             </MetaRow>
+
+            {/* CC Recipients */}
+            {isStaff && (
+              <MetaRow label="CC">
+                <div>
+                  {(t.ccRecipients ?? []).length > 0 && (
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: 3, marginBottom: 6 }}>
+                      {(t.ccRecipients ?? []).map((cc: any) => (
+                        <div key={cc.id} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', fontSize: 12 }}>
+                          <span style={{ color: 'var(--text-2)' }}>{cc.email}</span>
+                          <button type="button" className="btn btn-ghost btn-xs" style={{ color: '#dc2626', padding: '0 4px' }} onClick={() => removeCC(cc.email)}>✕</button>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                  <div style={{ display: 'flex', gap: 4 }}>
+                    <input
+                      type="email"
+                      placeholder="Add email…"
+                      value={ccInput}
+                      onChange={(e) => setCcInput(e.target.value)}
+                      onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); addCC(); } }}
+                      style={{ fontSize: 12, padding: '4px 8px', flex: 1 }}
+                    />
+                    <button type="button" className="btn btn-secondary btn-xs" onClick={addCC}>Add</button>
+                  </div>
+                </div>
+              </MetaRow>
+            )}
 
             {/* Assignees */}
             <MetaRow label="Assignees">

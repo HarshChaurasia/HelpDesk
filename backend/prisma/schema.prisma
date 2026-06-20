@@ -96,6 +96,7 @@ model User {
   resetTokens     PasswordResetToken[]
   reactions       Reaction[]       @relation("UserReactions")
   timeLogs        TicketTimeLog[]  @relation("TimeLogUser")
+  ccAdded         TicketCC[]       @relation("CCAddedBy")
 }
 
 model SlaPolicy {
@@ -147,6 +148,19 @@ model TicketTag {
   tag      Tag    @relation(fields: [tagId], references: [id], onDelete: Cascade)
 
   @@id([ticketId, tagId])
+  @@index([ticketId])
+}
+
+model TicketCC {
+  id        String   @id @default(uuid())
+  ticketId  String
+  ticket    Ticket   @relation(fields: [ticketId], references: [id], onDelete: Cascade)
+  email     String
+  addedById String?
+  addedBy   User?    @relation("CCAddedBy", fields: [addedById], references: [id])
+  addedAt   DateTime @default(now())
+
+  @@unique([ticketId, email])
   @@index([ticketId])
 }
 
@@ -209,6 +223,7 @@ model Ticket {
   notifications Notification[]
   tags          TicketTag[]
   timeLogs      TicketTimeLog[]
+  ccRecipients  TicketCC[]
 
   @@index([status])
   @@index([assignedToId, status])

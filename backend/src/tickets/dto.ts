@@ -2,6 +2,7 @@ import {
   IsArray,
   IsBoolean,
   IsDateString,
+  IsEmail,
   IsEnum,
   IsNumber,
   IsOptional,
@@ -81,6 +82,10 @@ export class TimeLogDto {
 
 export class TagToggleDto {
   @IsUUID() tagId: string;
+}
+
+export class CcDto {
+  @IsEmail() email: string;
 }
 
 export class BulkActionDto {
