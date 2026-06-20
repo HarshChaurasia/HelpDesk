@@ -33,6 +33,7 @@ import {
   BulkActionDto,
   CcDto,
   FeedbackDto,
+  MergeDto,
 } from './dto';
 import { ApiTags, ApiBearerAuth } from '@nestjs/swagger';
 import { Roles, CurrentUser, AuthUser } from '../common/decorators';
@@ -187,6 +188,12 @@ export class TicketsController {
     @CurrentUser() user: AuthUser,
   ) {
     return this.tickets.removeWatcher(id, userId, user);
+  }
+
+  @Roles('AGENT', 'ADMIN')
+  @Post(':id/merge')
+  merge(@Param('id') id: string, @Body() dto: MergeDto, @CurrentUser() user: AuthUser) {
+    return this.tickets.mergeTickets(id, dto.targetId, user);
   }
 
   @Post(':id/feedback')

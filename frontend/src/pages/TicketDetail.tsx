@@ -108,6 +108,11 @@ export default function TicketDetail() {
   // CC
   const [ccInput, setCcInput] = useState('');
 
+  // Merge
+  const [showMerge, setShowMerge] = useState(false);
+  const [mergeSearch, setMergeSearch] = useState('');
+  const [mergeTarget, setMergeTarget] = useState<any>(null);
+
   // CSAT
   const [csatRating, setCsatRating] = useState(0);
   const [csatComment, setCsatComment] = useState('');
@@ -224,6 +229,23 @@ export default function TicketDetail() {
     refresh();
   }
 
+  const { data: mergeResults } = useQuery({
+    queryKey: ['tickets-merge-search', mergeSearch],
+    queryFn: async () => {
+      if (!mergeSearch || mergeSearch.length < 2) return { data: [] };
+      return (await api.get('/tickets', { params: { q: mergeSearch, limit: 8 } })).data;
+    },
+    enabled: showMerge && mergeSearch.length >= 2,
+  });
+
+  async function doMerge() {
+    if (!mergeTarget) return;
+    if (!confirm(`Merge this ticket into ${mergeTarget.reference}? This ticket will be closed.`)) return;
+    await api.post(`/tickets/${id}/merge`, { targetId: mergeTarget.id });
+    setShowMerge(false);
+    refresh();
+  }
+
   async function submitCsat() {
     if (!csatRating) return;
     setCsatSubmitting(true);
@@ -302,6 +324,9 @@ export default function TicketDetail() {
             {t.allowedTransitions?.includes('IN_PROGRESS') && (
               <button type="button" className="btn btn-secondary btn-xs" onClick={() => changeStatus('IN_PROGRESS')}>▶ Start</button>
             )}
+            {t.status !== 'CLOSED' && (
+              <button type="button" className="btn btn-secondary btn-xs" onClick={() => setShowMerge(true)}>⇄ Merge into…</button>
+            )}
           </div>
         )}
         {!isStaff && t.status === 'RESOLVED' && (
@@ -353,6 +378,55 @@ export default function TicketDetail() {
                 }}>
                   Save & Resolve
                 </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Merge modal */}
+      {showMerge && (
+        <div className="preview-overlay" onClick={() => setShowMerge(false)}>
+          <div className="preview-modal" style={{ maxWidth: 520 }} onClick={(e) => e.stopPropagation()}>
+            <div className="preview-modal-header">
+              <span style={{ fontSize: 14, fontWeight: 600 }}>Merge ticket into…</span>
+              <button className="btn btn-ghost btn-xs" onClick={() => setShowMerge(false)}>✕</button>
+            </div>
+            <div style={{ padding: '16px 20px', display: 'flex', flexDirection: 'column', gap: 12 }}>
+              <p style={{ fontSize: 13, color: 'var(--text-3)', margin: 0 }}>
+                All messages from <strong>{t.reference}</strong> will be copied to the target ticket, and this ticket will be closed.
+              </p>
+              <input
+                type="text"
+                placeholder="Search by reference or subject…"
+                value={mergeSearch}
+                onChange={(e) => { setMergeSearch(e.target.value); setMergeTarget(null); }}
+                style={{ fontSize: 13, padding: '6px 10px' }}
+                autoFocus
+              />
+              {(mergeResults?.data ?? []).filter((r: any) => r.id !== id).length > 0 && (
+                <div style={{ border: '1px solid var(--border)', borderRadius: 6, overflow: 'hidden' }}>
+                  {(mergeResults?.data ?? []).filter((r: any) => r.id !== id).map((r: any) => (
+                    <button
+                      key={r.id}
+                      type="button"
+                      onClick={() => setMergeTarget(r)}
+                      style={{
+                        display: 'flex', alignItems: 'center', gap: 10, width: '100%',
+                        padding: '8px 12px', background: mergeTarget?.id === r.id ? 'var(--primary-light, #ede9fe)' : 'var(--bg)',
+                        border: 'none', borderBottom: '1px solid var(--border)', cursor: 'pointer', textAlign: 'left',
+                      }}
+                    >
+                      <span style={{ fontFamily: 'monospace', fontSize: 12, color: 'var(--text-3)' }}>{r.reference}</span>
+                      <span style={{ fontSize: 13, flex: 1 }}>{r.subject}</span>
+                      <span className={`badge ${r.status}`} style={{ fontSize: 11 }}>{STATUS_LABELS[r.status] ?? r.status}</span>
+                    </button>
+                  ))}
+                </div>
+              )}
+              <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
+                <button className="btn btn-secondary btn-sm" onClick={() => setShowMerge(false)}>Cancel</button>
+                <button className="btn btn-primary btn-sm" disabled={!mergeTarget} onClick={doMerge}>Merge</button>
               </div>
             </div>
           </div>

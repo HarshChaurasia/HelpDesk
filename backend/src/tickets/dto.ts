@@ -90,6 +90,10 @@ export class CcDto {
   @IsEmail() email: string;
 }
 
+export class MergeDto {
+  @IsUUID() targetId: string;
+}
+
 export class FeedbackDto {
   @IsInt() @Min(1) @Max(5) rating: number;
   @IsOptional() @IsString() comment?: string;

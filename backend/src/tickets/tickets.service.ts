@@ -377,6 +377,53 @@ export class TicketsService {
     return { data, meta: { page, limit, total } };
   }
 
+  async mergeTickets(sourceId: string, targetId: string, user: AuthUser) {
+    if (sourceId === targetId) throw new BadRequestException('Cannot merge a ticket into itself');
+    const [source, target] = await Promise.all([
+      this.prisma.ticket.findUnique({ where: { id: sourceId }, include: { messages: true } }),
+      this.prisma.ticket.findUnique({ where: { id: targetId } }),
+    ]);
+    if (!source) throw new NotFoundException('Source ticket not found');
+    if (!target) throw new NotFoundException('Target ticket not found');
+    if (source.status === TicketStatus.CLOSED) throw new BadRequestException('Source ticket is already closed');
+
+    await this.prisma.$transaction(async (tx) => {
+      // Copy non-deleted messages to target
+      for (const msg of source.messages.filter((m) => !m.deletedAt)) {
+        await tx.message.create({
+          data: {
+            ticketId: targetId,
+            authorId: msg.authorId,
+            type: msg.type,
+            body: msg.body,
+            channel: msg.channel,
+            createdAt: msg.createdAt,
+          },
+        });
+      }
+      // Add a merge note to target
+      await tx.message.create({
+        data: {
+          ticketId: targetId,
+          authorId: user.id,
+          type: MessageType.INTERNAL_NOTE,
+          body: `Merged from ticket <strong>${source.reference}</strong> by ${user.email}.`,
+          channel: Channel.WEB,
+        },
+      });
+      // Close source
+      await tx.ticket.update({
+        where: { id: sourceId },
+        data: { status: TicketStatus.CLOSED, closedAt: new Date() },
+      });
+      await tx.ticketEvent.create({
+        data: { ticketId: sourceId, type: EventType.CLOSED, actorId: user.id, toValue: `Merged into ${target.reference}` },
+      });
+    });
+
+    return { targetId, targetReference: target.reference };
+  }
+
   async submitFeedback(ticketId: string, rating: number, comment: string | undefined, user: AuthUser) {
     const ticket = await this.prisma.ticket.findUnique({ where: { id: ticketId } });
     if (!ticket) throw new NotFoundException('Ticket not found');
