@@ -7,6 +7,7 @@ import NewTicket from './pages/NewTicket';
 import AdminUsers from './pages/AdminUsers';
 import AdminSettings from './pages/AdminSettings';
 import Reports from './pages/Reports';
+import Sla from './pages/Sla';
 import NotificationBell from './components/NotificationBell';
 import { ReactNode } from 'react';
 import { avatarInitials, avatarStyle } from './utils';
@@ -42,6 +43,13 @@ function IconChart() {
     <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
       <path d="M3 3v18h18"/>
       <path d="m19 9-5 5-4-4-3 3"/>
+    </svg>
+  );
+}
+function IconSla() {
+  return (
+    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/>
     </svg>
   );
 }
@@ -108,6 +116,7 @@ function Layout({ children }: { children: ReactNode }) {
           {(user?.role === 'ADMIN' || user?.role === 'AGENT') && (
             <>
               <div className="sidebar-section">Analytics</div>
+              <NavItem to="/sla" icon={<IconSla />} label="SLA Dashboard" />
               <NavItem to="/reports" icon={<IconChart />} label="Reports" />
             </>
           )}
@@ -167,6 +176,7 @@ export default function App() {
       <Route path="/tickets/:id" element={<Protected><TicketDetail /></Protected>} />
       <Route path="/admin/users" element={<Protected><AdminUsers /></Protected>} />
       <Route path="/admin/settings" element={<Protected><AdminSettings /></Protected>} />
+      <Route path="/sla" element={<Protected><Sla /></Protected>} />
       <Route path="/reports" element={<Protected><Reports /></Protected>} />
       <Route path="*" element={<Navigate to="/tickets" replace />} />
     </Routes>
