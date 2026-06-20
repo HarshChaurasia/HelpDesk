@@ -151,6 +151,15 @@ model TicketTag {
   @@index([ticketId])
 }
 
+model TicketFeedback {
+  id          String   @id @default(uuid())
+  ticketId    String   @unique
+  ticket      Ticket   @relation(fields: [ticketId], references: [id], onDelete: Cascade)
+  rating      Int
+  comment     String?
+  submittedAt DateTime @default(now())
+}
+
 model TicketCC {
   id        String   @id @default(uuid())
   ticketId  String
@@ -224,6 +233,7 @@ model Ticket {
   tags          TicketTag[]
   timeLogs      TicketTimeLog[]
   ccRecipients  TicketCC[]
+  feedback      TicketFeedback?
 
   @@index([status])
   @@index([assignedToId, status])

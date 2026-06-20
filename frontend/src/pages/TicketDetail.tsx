@@ -108,6 +108,12 @@ export default function TicketDetail() {
   // CC
   const [ccInput, setCcInput] = useState('');
 
+  // CSAT
+  const [csatRating, setCsatRating] = useState(0);
+  const [csatComment, setCsatComment] = useState('');
+  const [csatSubmitting, setCsatSubmitting] = useState(false);
+  const [csatDone, setCsatDone] = useState(false);
+
   // Tag input
   const [tagInput, setTagInput] = useState('');
 
@@ -216,6 +222,16 @@ export default function TicketDetail() {
     await api.post(`/tickets/${id}/cc`, { email: ccInput.trim() });
     setCcInput('');
     refresh();
+  }
+
+  async function submitCsat() {
+    if (!csatRating) return;
+    setCsatSubmitting(true);
+    try {
+      await api.post(`/tickets/${id}/feedback`, { rating: csatRating, comment: csatComment || undefined });
+      setCsatDone(true);
+      refresh();
+    } finally { setCsatSubmitting(false); }
   }
 
   async function removeCC(email: string) {
@@ -417,6 +433,54 @@ export default function TicketDetail() {
               </div>
             </form>
           </div>
+
+          {/* CSAT prompt — customer only, resolved/closed, no feedback yet */}
+          {!isStaff && (t.status === 'RESOLVED' || t.status === 'CLOSED') && !t.feedback && !csatDone && (
+            <div className="card" style={{ marginTop: 16, borderLeft: '3px solid #6366f1' }}>
+              <div className="card-header"><span className="card-title">How did we do?</span></div>
+              <div style={{ padding: '4px 0 10px' }}>
+                <div style={{ display: 'flex', gap: 6, marginBottom: 10 }}>
+                  {[1, 2, 3, 4, 5].map((n) => (
+                    <button
+                      key={n}
+                      type="button"
+                      onClick={() => setCsatRating(n)}
+                      style={{
+                        width: 36, height: 36, borderRadius: 8, border: '1px solid var(--border)',
+                        background: csatRating >= n ? '#6366f1' : 'var(--bg)',
+                        color: csatRating >= n ? '#fff' : 'var(--text-3)',
+                        fontSize: 16, cursor: 'pointer', fontWeight: 600,
+                      }}
+                    >
+                      {['😞', '😕', '😐', '🙂', '😊'][n - 1]}
+                    </button>
+                  ))}
+                  {csatRating > 0 && <span style={{ fontSize: 13, color: 'var(--text-3)', alignSelf: 'center', marginLeft: 4 }}>
+                    {['Very dissatisfied', 'Dissatisfied', 'Neutral', 'Satisfied', 'Very satisfied'][csatRating - 1]}
+                  </span>}
+                </div>
+                <input
+                  type="text"
+                  placeholder="Any comments? (optional)"
+                  value={csatComment}
+                  onChange={(e) => setCsatComment(e.target.value)}
+                  style={{ fontSize: 13, padding: '6px 10px', marginBottom: 8, width: '100%' }}
+                />
+                <button
+                  className="btn btn-primary btn-sm"
+                  disabled={!csatRating || csatSubmitting}
+                  onClick={submitCsat}
+                >
+                  {csatSubmitting ? 'Submitting…' : 'Submit feedback'}
+                </button>
+              </div>
+            </div>
+          )}
+          {!isStaff && (t.status === 'RESOLVED' || t.status === 'CLOSED') && (t.feedback || csatDone) && (
+            <div className="card" style={{ marginTop: 16, borderLeft: '3px solid #16a34a' }}>
+              <div style={{ fontSize: 13, color: '#16a34a', fontWeight: 500 }}>Thanks for your feedback!</div>
+            </div>
+          )}
 
           {/* Attachments */}
           <div className="card" style={{ marginTop: 16 }}>
@@ -735,6 +799,23 @@ export default function TicketDetail() {
                   Save changes
                 </button>
               )}
+            </div>
+          )}
+
+          {/* Customer Feedback */}
+          {isStaff && t.feedback && (
+            <div className="card" style={{ marginTop: 12 }}>
+              <div className="card-header"><span className="card-title">Customer Feedback</span></div>
+              <div style={{ fontSize: 13, display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4 }}>
+                <span style={{ fontSize: 18 }}>
+                  {['😞', '😕', '😐', '🙂', '😊'][t.feedback.rating - 1]}
+                </span>
+                <span style={{ fontWeight: 600 }}>
+                  {['Very dissatisfied', 'Dissatisfied', 'Neutral', 'Satisfied', 'Very satisfied'][t.feedback.rating - 1]}
+                </span>
+                <span className="muted">({t.feedback.rating}/5)</span>
+              </div>
+              {t.feedback.comment && <div style={{ fontSize: 12.5, color: 'var(--text-2)', fontStyle: 'italic' }}>"{t.feedback.comment}"</div>}
             </div>
           )}
 

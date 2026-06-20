@@ -377,6 +377,20 @@ export class TicketsService {
     return { data, meta: { page, limit, total } };
   }
 
+  async submitFeedback(ticketId: string, rating: number, comment: string | undefined, user: AuthUser) {
+    const ticket = await this.prisma.ticket.findUnique({ where: { id: ticketId } });
+    if (!ticket) throw new NotFoundException('Ticket not found');
+    if (ticket.createdById !== user.id) throw new ForbiddenException('Only the ticket creator can submit feedback');
+    if (ticket.status !== TicketStatus.RESOLVED && ticket.status !== TicketStatus.CLOSED) {
+      throw new BadRequestException('Feedback can only be submitted on resolved or closed tickets');
+    }
+    return this.prisma.ticketFeedback.upsert({
+      where: { ticketId },
+      update: { rating, comment: comment ?? null },
+      create: { ticketId, rating, comment: comment ?? null },
+    });
+  }
+
   async addCC(ticketId: string, email: string, user: AuthUser) {
     await this.assertAccess(ticketId, user);
     const cc = await this.prisma.ticketCC.upsert({
@@ -481,6 +495,7 @@ export class TicketsService {
           include: { user: { select: { id: true, fullName: true } } },
         },
         ccRecipients: { orderBy: { addedAt: 'asc' }, include: { addedBy: { select: { id: true, fullName: true } } } },
+        feedback: true,
       },
     });
     if (!ticket) throw new NotFoundException();

@@ -32,6 +32,7 @@ import {
   TagToggleDto,
   BulkActionDto,
   CcDto,
+  FeedbackDto,
 } from './dto';
 import { ApiTags, ApiBearerAuth } from '@nestjs/swagger';
 import { Roles, CurrentUser, AuthUser } from '../common/decorators';
@@ -186,6 +187,11 @@ export class TicketsController {
     @CurrentUser() user: AuthUser,
   ) {
     return this.tickets.removeWatcher(id, userId, user);
+  }
+
+  @Post(':id/feedback')
+  submitFeedback(@Param('id') id: string, @Body() dto: FeedbackDto, @CurrentUser() user: AuthUser) {
+    return this.tickets.submitFeedback(id, dto.rating, dto.comment, user);
   }
 
   @Roles('AGENT', 'ADMIN')

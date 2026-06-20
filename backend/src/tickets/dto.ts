@@ -4,10 +4,12 @@ import {
   IsDateString,
   IsEmail,
   IsEnum,
+  IsInt,
   IsNumber,
   IsOptional,
   IsString,
   IsUUID,
+  Max,
   Min,
   MinLength,
 } from 'class-validator';
@@ -86,6 +88,11 @@ export class TagToggleDto {
 
 export class CcDto {
   @IsEmail() email: string;
+}
+
+export class FeedbackDto {
+  @IsInt() @Min(1) @Max(5) rating: number;
+  @IsOptional() @IsString() comment?: string;
 }
 
 export class BulkActionDto {
