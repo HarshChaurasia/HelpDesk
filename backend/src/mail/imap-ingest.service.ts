@@ -14,6 +14,7 @@ export interface InboundEmailData {
   subject: string;
   body: string;
   isAutoReply: boolean;
+  isSystemNotification: boolean;
 }
 
 export interface ProcessResult {
@@ -89,8 +90,8 @@ export class ImapIngestService {
     });
     if (dup) return { outcome: 'DUPLICATE' };
 
-    // 2. Drop auto-replies/bounces
-    if (data.isAutoReply) {
+    // 2. Drop auto-replies/bounces and our own system notification emails
+    if (data.isAutoReply || data.isSystemNotification) {
       await this.prisma.processedEmail.create({
         data: { messageId: data.messageId, outcome: 'IGNORED' },
       });
@@ -223,6 +224,7 @@ export class ImapIngestService {
               parsed.headers.get('auto-submitted') ||
               parsed.headers.get('x-autoreply')
             );
+            const isSystemNotification = !!parsed.headers.get('x-helpdesk-notification');
 
             const result = await this.processEmailMessage({
               messageId,
@@ -234,6 +236,7 @@ export class ImapIngestService {
                 (typeof parsed.html === 'string' ? parsed.html : '') ||
                 '',
               isAutoReply,
+              isSystemNotification,
             });
 
             if (result.outcome !== 'DUPLICATE') processed++;

@@ -6,6 +6,7 @@ export interface MailMessage {
   subject: string;
   text: string;
   html?: string;
+  headers?: Record<string, string>;
 }
 
 export interface SmtpConfig {
@@ -51,6 +52,7 @@ export class MailerService {
         subject: msg.subject,
         text: msg.text,
         html: msg.html,
+        headers: msg.headers,
       });
     } catch (err) {
       this.logger.error(`Failed to send mail to ${msg.to}: ${err}`);

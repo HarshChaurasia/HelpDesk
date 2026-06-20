@@ -162,6 +162,7 @@ export default function TicketDetail() {
     setSaving(true);
     try {
       await api.patch(`/tickets/${id}`, draft);
+      setDraft({});
       refresh();
     } finally { setSaving(false); }
   }

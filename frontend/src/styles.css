@@ -419,6 +419,13 @@ tbody tr:hover { background: #fafbfc; }
   display: flex;
   align-items: center;
   gap: 8px;
+  min-width: 0;
+}
+.user-cell > span, .user-cell > a {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  min-width: 0;
 }
 
 /* ═══════════════════════════════════════════════════════
@@ -721,7 +728,7 @@ tbody tr:hover { background: #fafbfc; }
 
 .ticket-subject { font-size: 17px; font-weight: 700; color: var(--text); }
 
-.meta-section { margin-bottom: 14px; }
+.meta-section { margin-bottom: 14px; overflow: hidden; }
 .meta-label {
   font-size: 11px;
   font-weight: 600;
@@ -730,7 +737,8 @@ tbody tr:hover { background: #fafbfc; }
   color: var(--text-3);
   margin-bottom: 5px;
 }
-.meta-value { font-size: 13.5px; color: var(--text); }
+.meta-value { font-size: 13.5px; color: var(--text); min-width: 0; overflow: hidden; }
+.meta-section > .meta-value, .meta-section > div { min-width: 0; overflow-wrap: break-word; word-break: break-word; }
 
 /* ═══════════════════════════════════════════════════════
    Breadcrumb

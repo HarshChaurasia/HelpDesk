@@ -137,6 +137,7 @@ export class NotificationsService {
           subject: `Re: [${ticket.reference}] ${ticket.subject}`,
           text,
           html,
+          headers: { 'X-HelpDesk-Notification': '1' },
         });
       }
     }

@@ -29,6 +29,7 @@ const BASE_EMAIL: InboundEmailData = {
   subject: 'Cannot log in',
   body: 'I get a 500 error on the login page.',
   isAutoReply: false,
+  isSystemNotification: false,
 };
 
 beforeEach(() => {
@@ -75,6 +76,21 @@ describe('ImapIngestService.processEmailMessage', () => {
         expect.objectContaining({ data: expect.objectContaining({ outcome: 'IGNORED' }) }),
       );
       expect(mockTicketsService.createFromEmail).not.toHaveBeenCalled();
+    });
+
+    it('returns IGNORED for system notification emails (prevents feedback loop)', async () => {
+      const svc = makeService();
+      const result = await svc.processEmailMessage({
+        ...BASE_EMAIL,
+        subject: 'Re: [HD-000008] Cannot access the portal',
+        isSystemNotification: true,
+      });
+
+      expect(result.outcome).toBe('IGNORED');
+      expect(mockPrisma.processedEmail.create).toHaveBeenCalledWith(
+        expect.objectContaining({ data: expect.objectContaining({ outcome: 'IGNORED' }) }),
+      );
+      expect(mockTicketsService.appendFromEmail).not.toHaveBeenCalled();
     });
   });
 
