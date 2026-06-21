@@ -24,8 +24,13 @@ export default function NewTicket() {
   const [subcategoryId, setSubcategoryId] = useState('');
   const [priority, setPriority] = useState('MEDIUM');
   const [assignees, setAssignees] = useState<UserOption[]>([]);
+  const [deliveryDate, setDeliveryDate] = useState('');
+  const [showSystem, setShowSystem] = useState(false);
+  const [sys, setSys] = useState({ product: '', module: '', version: '', browser: '', os: '' });
   const [err, setErr] = useState('');
   const [submitting, setSubmitting] = useState(false);
+
+  function patchSys(k: keyof typeof sys, v: string) { setSys((s) => ({ ...s, [k]: v })); }
 
   const { data: categories } = useQuery({
     queryKey: ['categories'],
@@ -52,6 +57,12 @@ export default function NewTicket() {
         categoryId: categoryId || undefined,
         subcategoryId: subcategoryId || undefined,
         assigneeIds: assignees.map((a) => a.id),
+        deliveryDate: deliveryDate ? new Date(deliveryDate).toISOString() : undefined,
+        systemProduct: sys.product || undefined,
+        systemModule: sys.module || undefined,
+        systemVersion: sys.version || undefined,
+        systemBrowser: sys.browser || undefined,
+        systemOs: sys.os || undefined,
       });
       nav(`/tickets/${data.id}`);
     } catch (e: any) {
@@ -107,16 +118,6 @@ export default function NewTicket() {
                   <option key={c.id} value={c.id}>{c.name}</option>
                 ))}
               </select>
-              {categoryId && (() => {
-                const cat = categories?.find((c: any) => c.id === categoryId);
-                const subs = cat?.subcategories ?? [];
-                return subs.length > 0 ? (
-                  <select style={{ marginTop: 6 }} value={subcategoryId} onChange={(e) => setSubcategoryId(e.target.value)}>
-                    <option value="">— Subcategory —</option>
-                    {subs.map((s: any) => <option key={s.id} value={s.id}>{s.name}</option>)}
-                  </select>
-                ) : null;
-              })()}
             </div>
 
             <div className="form-group">
@@ -127,6 +128,69 @@ export default function NewTicket() {
                 ))}
               </select>
             </div>
+          </div>
+
+          {(() => {
+            const cat = categories?.find((c: any) => c.id === categoryId);
+            const subs: any[] = cat?.subcategories ?? [];
+            if (!categoryId || subs.length === 0) return null;
+            return (
+              <div className="form-group">
+                <label className="form-label">Subcategory</label>
+                <select value={subcategoryId} onChange={(e) => setSubcategoryId(e.target.value)}>
+                  <option value="">— Select subcategory —</option>
+                  {subs.map((s: any) => <option key={s.id} value={s.id}>{s.name}</option>)}
+                </select>
+              </div>
+            );
+          })()}
+
+          <div className="form-group">
+            <label className="form-label">Delivery / Due Date</label>
+            <input
+              type="datetime-local"
+              value={deliveryDate}
+              onChange={(e) => setDeliveryDate(e.target.value)}
+              style={{ maxWidth: 280 }}
+            />
+            <span className="form-hint">Optional. When this request is expected to be delivered or resolved.</span>
+          </div>
+
+          {/* System details (collapsible — optional) */}
+          <div className="form-group">
+            <button
+              type="button"
+              className="btn btn-ghost btn-xs"
+              onClick={() => setShowSystem((v) => !v)}
+              style={{ padding: 0, fontSize: 13, fontWeight: 500 }}
+            >
+              <span style={{ display: 'inline-block', transition: 'transform .15s', transform: showSystem ? 'rotate(90deg)' : 'rotate(0)', marginRight: 6, fontSize: 11, opacity: 0.6 }}>▶</span>
+              System details (optional)
+            </button>
+            {showSystem && (
+              <div style={{ marginTop: 10, display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0 16px' }}>
+                <div className="form-group">
+                  <label className="form-label">Product</label>
+                  <input placeholder="e.g. Web Portal" value={sys.product} onChange={(e) => patchSys('product', e.target.value)} />
+                </div>
+                <div className="form-group">
+                  <label className="form-label">Module</label>
+                  <input placeholder="e.g. Billing" value={sys.module} onChange={(e) => patchSys('module', e.target.value)} />
+                </div>
+                <div className="form-group">
+                  <label className="form-label">Version</label>
+                  <input placeholder="e.g. 2.4.1" value={sys.version} onChange={(e) => patchSys('version', e.target.value)} />
+                </div>
+                <div className="form-group">
+                  <label className="form-label">Browser</label>
+                  <input placeholder="e.g. Chrome 126" value={sys.browser} onChange={(e) => patchSys('browser', e.target.value)} />
+                </div>
+                <div className="form-group">
+                  <label className="form-label">Operating System</label>
+                  <input placeholder="e.g. Windows 11" value={sys.os} onChange={(e) => patchSys('os', e.target.value)} />
+                </div>
+              </div>
+            )}
           </div>
 
           {isStaff && (

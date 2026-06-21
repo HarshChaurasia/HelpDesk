@@ -36,9 +36,16 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       try {
         const data = await doRefresh();
         setUser(data.user);
-      } catch {
-        setToken(null);
-        setStoredRefreshToken(null);
+      } catch (e: any) {
+        // Only drop the stored token if the server actually rejected it as
+        // invalid/revoked (400/401). Transient failures — throttle (429), 5xx,
+        // or a network blip — must NOT log the user out, otherwise a single
+        // hiccup forces a re-login on every page refresh.
+        const status = e?.response?.status;
+        if (status === 400 || status === 401) {
+          setToken(null);
+          setStoredRefreshToken(null);
+        }
       } finally {
         setLoading(false);
       }

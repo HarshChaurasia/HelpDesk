@@ -7,6 +7,7 @@ export const api = axios.create({ baseURL: BASE, timeout: 10000 });
 
 let accessToken: string | null = null;
 export function setToken(t: string | null) { accessToken = t; }
+export function getAccessToken() { return accessToken; }
 
 api.interceptors.request.use((cfg) => {
   if (accessToken) cfg.headers.Authorization = `Bearer ${accessToken}`;

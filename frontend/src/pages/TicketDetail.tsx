@@ -75,13 +75,15 @@ function ReactionBar({ message, ticketId, currentUserId, onRefresh }: {
 function CollapsibleCard({
   title,
   defaultOpen = true,
-  maxHeight = 360,
+  maxHeight,
   headerRight,
   children,
   style,
 }: {
   title: string;
   defaultOpen?: boolean;
+  // When set, the card body scrolls internally past this height. Left unset,
+  // the body flows at its natural height — the sidebar column owns the scroll.
   maxHeight?: number;
   headerRight?: React.ReactNode;
   children: React.ReactNode;
@@ -102,7 +104,7 @@ function CollapsibleCard({
         {headerRight && <span onClick={(e) => e.stopPropagation()}>{headerRight}</span>}
       </div>
       {open && (
-        <div className="collapsible-body" style={{ maxHeight, overflowY: 'auto' }}>
+        <div className="collapsible-body" style={maxHeight ? { maxHeight, overflowY: 'auto' } : undefined}>
           {children}
         </div>
       )}
@@ -892,8 +894,6 @@ export default function TicketDetail() {
         <div className="ticket-details-col">
           <CollapsibleCard
             title="Details"
-            maxHeight={500}
-            style={{ position: 'sticky', top: 68 }}
             headerRight={isStaff && hasDraft ? (
               <button className="btn btn-primary btn-xs" onClick={saveChanges} disabled={saving}>
                 {saving ? 'Saving…' : 'Save changes'}
@@ -1026,36 +1026,43 @@ export default function TicketDetail() {
             {/* Category */}
             <MetaRow label="Category">
               {isStaff ? (
-                <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                <select
+                  value={draft.categoryId ?? t.categoryId ?? ''}
+                  onChange={(e) => {
+                    patchDraft('categoryId', e.target.value || null);
+                    patchDraft('subcategoryId', null);
+                  }}
+                  style={{ fontSize: 13 }}
+                >
+                  <option value="">— None —</option>
+                  {categories.map((c: any) => <option key={c.id} value={c.id}>{c.name}</option>)}
+                </select>
+              ) : (
+                <span>{t.category?.name ?? <span className="muted">None</span>}</span>
+              )}
+            </MetaRow>
+
+            {/* Subcategory */}
+            {isStaff ? (
+              subcategories.length > 0 && (
+                <MetaRow label="Subcategory">
                   <select
-                    value={draft.categoryId ?? t.categoryId ?? ''}
-                    onChange={(e) => {
-                      patchDraft('categoryId', e.target.value || null);
-                      patchDraft('subcategoryId', null);
-                    }}
+                    value={draft.subcategoryId ?? t.subcategoryId ?? ''}
+                    onChange={(e) => patchDraft('subcategoryId', e.target.value || null)}
                     style={{ fontSize: 13 }}
                   >
                     <option value="">— None —</option>
-                    {categories.map((c: any) => <option key={c.id} value={c.id}>{c.name}</option>)}
+                    {subcategories.map((s: any) => <option key={s.id} value={s.id}>{s.name}</option>)}
                   </select>
-                  {subcategories.length > 0 && (
-                    <select
-                      value={draft.subcategoryId ?? t.subcategoryId ?? ''}
-                      onChange={(e) => patchDraft('subcategoryId', e.target.value || null)}
-                      style={{ fontSize: 13 }}
-                    >
-                      <option value="">— Subcategory —</option>
-                      {subcategories.map((s: any) => <option key={s.id} value={s.id}>{s.name}</option>)}
-                    </select>
-                  )}
-                </div>
-              ) : (
-                <span>
-                  {t.category?.name ?? <span className="muted">None</span>}
-                  {t.subcategory && <span className="muted"> / {t.subcategory.name}</span>}
-                </span>
-              )}
-            </MetaRow>
+                </MetaRow>
+              )
+            ) : (
+              t.subcategory && (
+                <MetaRow label="Subcategory">
+                  <span>{t.subcategory.name}</span>
+                </MetaRow>
+              )
+            )}
 
             {/* Delivery Date */}
             <MetaRow label="Delivery Date">
@@ -1159,7 +1166,7 @@ export default function TicketDetail() {
 
           {/* System Info */}
           {isStaff && (
-            <CollapsibleCard title="System Info" defaultOpen={false} maxHeight={280} style={{ marginTop: 12 }}>
+            <CollapsibleCard title="System Info" defaultOpen={false} style={{ marginTop: 12 }}>
               {(['systemProduct', 'systemModule', 'systemVersion', 'systemBrowser', 'systemOs'] as const).map((field) => {
                 const labels: Record<string, string> = { systemProduct: 'Product', systemModule: 'Module', systemVersion: 'Version', systemBrowser: 'Browser', systemOs: 'OS' };
                 return (
@@ -1236,7 +1243,6 @@ export default function TicketDetail() {
             <CollapsibleCard
               title="Related Tickets"
               defaultOpen={(t.relations?.length ?? 0) > 0}
-              maxHeight={300}
               style={{ marginTop: 12 }}
               headerRight={
                 <button
@@ -1323,7 +1329,7 @@ export default function TicketDetail() {
 
         {/* ── Right: Activity ── */}
         <div className="ticket-activity-col">
-          <CollapsibleCard title="Activity" maxHeight={400} style={{ position: 'sticky', top: 68 }}>
+          <CollapsibleCard title="Activity">
             {(t.events?.length ?? 0) === 0 ? (
               <div className="muted" style={{ fontSize: 12.5, padding: '8px 0' }}>No activity yet.</div>
             ) : (

@@ -344,6 +344,58 @@ function SlaMatrixReadonly({ label, value }: { label: string; value: Record<stri
 /* ═══════════════════════════════════════
    CATEGORIES TAB
 ═══════════════════════════════════════ */
+function SubcategoryManager({ category }: { category: any }) {
+  const qc = useQueryClient();
+  const [name, setName] = useState('');
+  const subs: any[] = category.subcategories ?? [];
+
+  const invalidate = () => {
+    qc.invalidateQueries({ queryKey: ['categories-admin'] });
+    qc.invalidateQueries({ queryKey: ['categories'] }); // keep ticket forms in sync
+  };
+
+  const addMut = useMutation({
+    mutationFn: (n: string) => api.post(`/categories/${category.id}/subcategories`, { name: n }),
+    onSuccess: () => { invalidate(); setName(''); },
+  });
+  const delMut = useMutation({
+    mutationFn: (id: string) => api.delete(`/categories/${category.id}/subcategories/${id}`),
+    onSuccess: invalidate,
+  });
+
+  const canAdd = name.trim().length >= 2;
+
+  return (
+    <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4, alignItems: 'center' }}>
+      {subs.length === 0 && <span className="muted" style={{ fontSize: 12 }}>None yet</span>}
+      {subs.map((s: any) => (
+        <span key={s.id} className="tag-chip" style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}>
+          {s.name}
+          <button
+            type="button"
+            onClick={() => delMut.mutate(s.id)}
+            disabled={delMut.isPending}
+            title="Remove subcategory"
+            style={{ border: 'none', background: 'none', cursor: 'pointer', color: '#dc2626', padding: 0, fontSize: 13, lineHeight: 1 }}
+          >
+            ×
+          </button>
+        </span>
+      ))}
+      <input
+        value={name}
+        onChange={(e) => setName(e.target.value)}
+        onKeyDown={(e) => { if (e.key === 'Enter' && canAdd) { e.preventDefault(); addMut.mutate(name.trim()); } }}
+        placeholder="+ add"
+        style={{ fontSize: 12, padding: '2px 6px', width: 84, marginBottom: 0 }}
+      />
+      {canAdd && (
+        <button className="btn btn-secondary btn-xs" onClick={() => addMut.mutate(name.trim())} disabled={addMut.isPending}>Add</button>
+      )}
+    </div>
+  );
+}
+
 function CategorySettings() {
   const qc = useQueryClient();
   const [creating, setCreating] = useState(false);
@@ -392,12 +444,13 @@ function CategorySettings() {
               <th>Name</th>
               <th>Description</th>
               <th>SLA Policy</th>
+              <th>Subcategories</th>
               <th></th>
             </tr>
           </thead>
           <tbody>
             {categories?.length === 0 && (
-              <tr><td colSpan={4}><div className="empty-state"><div className="empty-state-icon">🏷️</div><div className="empty-state-title">No categories yet</div></div></td></tr>
+              <tr><td colSpan={5}><div className="empty-state"><div className="empty-state-icon">🏷️</div><div className="empty-state-title">No categories yet</div></div></td></tr>
             )}
             {categories?.map((c: any) => (
               <tr key={c.id}>
@@ -411,6 +464,7 @@ function CategorySettings() {
                         {policies?.map((p: any) => <option key={p.id} value={p.id}>{p.name}</option>)}
                       </select>
                     </td>
+                    <td><SubcategoryManager category={c} /></td>
                     <td>
                       <div style={{ display: 'flex', gap: 6 }}>
                         <button className="btn btn-primary btn-xs" onClick={() => updateMutation.mutate({ id: c.id, ...editForm })} disabled={updateMutation.isPending}>Save</button>
@@ -423,6 +477,7 @@ function CategorySettings() {
                     <td style={{ fontWeight: 500 }}>{c.name}</td>
                     <td className="muted">{c.description || '—'}</td>
                     <td>{c.slaPolicy ? <span className="badge OPEN">{c.slaPolicy.name}</span> : <span className="muted">—</span>}</td>
+                    <td><SubcategoryManager category={c} /></td>
                     <td>
                       <div style={{ display: 'flex', gap: 6 }}>
                         <button className="btn btn-secondary btn-xs" onClick={() => { setEditing(c.id); setEditForm({ name: c.name, description: c.description ?? '', slaPolicyId: c.slaPolicyId ?? '' }); }}>Edit</button>
@@ -443,6 +498,7 @@ function CategorySettings() {
                     {policies?.map((p: any) => <option key={p.id} value={p.id}>{p.name}</option>)}
                   </select>
                 </td>
+                <td><span className="muted" style={{ fontSize: 12 }}>Save first, then add</span></td>
                 <td>
                   <div style={{ display: 'flex', gap: 6 }}>
                     <button className="btn btn-primary btn-xs" onClick={() => createMutation.mutate({ ...newForm, slaPolicyId: newForm.slaPolicyId || undefined })} disabled={!newForm.name || createMutation.isPending}>Add</button>

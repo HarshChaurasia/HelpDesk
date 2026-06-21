@@ -1003,8 +1003,14 @@ tbody tr:hover { background: #fafbfc; }
 }
 
 .ticket-main { min-width: 0; }
-.ticket-details-col { min-width: 0; }
-.ticket-activity-col { min-width: 0; }
+
+/* All three columns flow in normal document order and scroll together with the
+   page — no pinning, no internal scrollbars on the sidebar panels. */
+.ticket-details-col,
+.ticket-activity-col {
+  min-width: 0;
+  overflow: visible;
+}
 
 @media (max-width: 1100px) {
   .ticket-layout-3col { grid-template-columns: 1fr 240px; }
@@ -1012,8 +1018,6 @@ tbody tr:hover { background: #fafbfc; }
 }
 @media (max-width: 768px) {
   .ticket-layout-3col { grid-template-columns: 1fr; }
-  .ticket-details-col,
-  .ticket-activity-col { position: static !important; }
 }
 
 /* ═══════════════════════════════════════════════════════

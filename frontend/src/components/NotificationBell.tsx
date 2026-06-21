@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { io, Socket } from 'socket.io-client';
-import { api } from '../api';
+import { api, getAccessToken, doRefresh } from '../api';
 import { relativeTime } from '../utils';
 
 let socket: Socket | null = null;
@@ -32,15 +32,25 @@ export default function NotificationBell() {
   });
 
   useEffect(() => {
-    api.post('/auth/refresh').then(({ data }) => {
+    let cancelled = false;
+    (async () => {
+      // Reuse the access token already established by AuthProvider's bootstrap
+      // refresh. Only fall back to a (deduped) refresh if it isn't set yet —
+      // never call /auth/refresh directly here, or it races token rotation and
+      // floods the endpoint into a rate-limit.
+      let token = getAccessToken();
+      if (!token) {
+        try { token = (await doRefresh()).accessToken; } catch { return; }
+      }
+      if (cancelled) return;
       socket?.disconnect();
-      socket = io((import.meta.env.VITE_API_URL ?? '').replace(/\/+$/, ''), { path: '/ws', auth: { token: data.accessToken } });
+      socket = io((import.meta.env.VITE_API_URL ?? '').replace(/\/+$/, ''), { path: '/ws', auth: { token } });
       socket.on('notification:new', () => {
         qc.invalidateQueries({ queryKey: ['unread'] });
         qc.invalidateQueries({ queryKey: ['notifs'] });
       });
-    });
-    return () => { socket?.disconnect(); socket = null; };
+    })();
+    return () => { cancelled = true; socket?.disconnect(); socket = null; };
   }, [qc]);
 
   async function markAll() {
