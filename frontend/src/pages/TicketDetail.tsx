@@ -1078,6 +1078,26 @@ export default function TicketDetail() {
               )}
             </MetaRow>
 
+            {/* Estimated Effort */}
+            <MetaRow label="Estimated Effort">
+              {isStaff ? (
+                <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                  <input
+                    type="number"
+                    min="0"
+                    step="0.5"
+                    placeholder="—"
+                    value={draft.estimatedEffortHours ?? t.estimatedEffortHours ?? ''}
+                    onChange={(e) => patchDraft('estimatedEffortHours', e.target.value === '' ? null : parseFloat(e.target.value))}
+                    style={{ fontSize: 13, width: 90 }}
+                  />
+                  <span style={{ fontSize: 12, color: 'var(--text-3)' }}>hours</span>
+                </div>
+              ) : (
+                t.estimatedEffortHours != null ? `${t.estimatedEffortHours}h` : <span className="muted">Not set</span>
+              )}
+            </MetaRow>
+
             {/* Tags */}
             {isStaff && (
               <MetaRow label="Tags">
@@ -1227,15 +1247,77 @@ export default function TicketDetail() {
             </div>
           )}
 
-          {/* Resolution / RCA */}
-          {(t.resolutionSummary || t.rootCause) && (
-            <div className="card" style={{ marginTop: 12 }}>
-              <div className="card-header"><span className="card-title">Resolution</span></div>
-              {t.resolutionSummary && <MetaRow label="Summary"><div style={{ fontSize: 13 }}>{t.resolutionSummary}</div></MetaRow>}
-              {t.rootCause && <MetaRow label="Root Cause"><div style={{ fontSize: 13 }}>{t.rootCause}</div></MetaRow>}
-              {t.correctiveAction && <MetaRow label="Corrective Action"><div style={{ fontSize: 13 }}>{t.correctiveAction}</div></MetaRow>}
-              {t.preventiveAction && <MetaRow label="Preventive Action"><div style={{ fontSize: 13 }}>{t.preventiveAction}</div></MetaRow>}
-            </div>
+          {/* Resolution */}
+          {(isStaff || t.resolutionSummary) && (
+            <CollapsibleCard title="Resolution" defaultOpen={!!t.resolutionSummary} style={{ marginTop: 12 }}>
+              {isStaff ? (
+                <>
+                  <div className="form-group" style={{ marginBottom: 0 }}>
+                    <label className="form-label">Resolution Summary</label>
+                    <textarea
+                      rows={3}
+                      placeholder="What was done to resolve this ticket…"
+                      value={draft.resolutionSummary ?? t.resolutionSummary ?? ''}
+                      onChange={(e) => patchDraft('resolutionSummary', e.target.value)}
+                    />
+                    <span className="form-hint">Filled in after the issue is resolved.</span>
+                  </div>
+                  {hasDraft && (
+                    <button className="btn btn-primary btn-xs" style={{ marginTop: 8 }} onClick={saveChanges} disabled={saving}>
+                      {saving ? 'Saving…' : 'Save changes'}
+                    </button>
+                  )}
+                </>
+              ) : (
+                t.resolutionSummary
+                  ? <div style={{ fontSize: 13, whiteSpace: 'pre-wrap' }}>{t.resolutionSummary}</div>
+                  : <div className="muted" style={{ fontSize: 12 }}>Not resolved yet.</div>
+              )}
+            </CollapsibleCard>
+          )}
+
+          {/* Root Cause Analysis */}
+          {(isStaff || t.rootCause || t.correctiveAction || t.preventiveAction) && (
+            <CollapsibleCard
+              title="Root Cause Analysis"
+              defaultOpen={!!(t.rootCause || t.correctiveAction || t.preventiveAction)}
+              style={{ marginTop: 12 }}
+            >
+              {isStaff ? (
+                <>
+                  <div className="form-group" style={{ marginBottom: 8 }}>
+                    <label className="form-label">Root Cause</label>
+                    <textarea rows={2} placeholder="What caused this issue?"
+                      value={draft.rootCause ?? t.rootCause ?? ''}
+                      onChange={(e) => patchDraft('rootCause', e.target.value)} />
+                  </div>
+                  <div className="form-group" style={{ marginBottom: 8 }}>
+                    <label className="form-label">Corrective Action</label>
+                    <textarea rows={2} placeholder="Immediate fix applied…"
+                      value={draft.correctiveAction ?? t.correctiveAction ?? ''}
+                      onChange={(e) => patchDraft('correctiveAction', e.target.value)} />
+                  </div>
+                  <div className="form-group" style={{ marginBottom: 0 }}>
+                    <label className="form-label">Preventive Action</label>
+                    <textarea rows={2} placeholder="How to prevent recurrence…"
+                      value={draft.preventiveAction ?? t.preventiveAction ?? ''}
+                      onChange={(e) => patchDraft('preventiveAction', e.target.value)} />
+                  </div>
+                  {hasDraft && (
+                    <button className="btn btn-primary btn-xs" style={{ marginTop: 8 }} onClick={saveChanges} disabled={saving}>
+                      {saving ? 'Saving…' : 'Save changes'}
+                    </button>
+                  )}
+                </>
+              ) : (
+                <>
+                  {t.rootCause && <MetaRow label="Root Cause"><div style={{ fontSize: 13, whiteSpace: 'pre-wrap' }}>{t.rootCause}</div></MetaRow>}
+                  {t.correctiveAction && <MetaRow label="Corrective Action"><div style={{ fontSize: 13, whiteSpace: 'pre-wrap' }}>{t.correctiveAction}</div></MetaRow>}
+                  {t.preventiveAction && <MetaRow label="Preventive Action"><div style={{ fontSize: 13, whiteSpace: 'pre-wrap' }}>{t.preventiveAction}</div></MetaRow>}
+                  {!t.rootCause && !t.correctiveAction && !t.preventiveAction && <div className="muted" style={{ fontSize: 12 }}>No analysis recorded.</div>}
+                </>
+              )}
+            </CollapsibleCard>
           )}
 
           {/* Related Tickets */}

@@ -267,6 +267,7 @@ model Ticket {
   assignedToId           String?
   assignedTo             User?        @relation("AssignedTo", fields: [assignedToId], references: [id])
   deliveryDate           DateTime?
+  estimatedEffortHours   Float?
   resolutionSummary      String?
   rootCause              String?
   correctiveAction       String?

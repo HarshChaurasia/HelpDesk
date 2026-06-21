@@ -1,7 +1,5 @@
-import { useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { api } from '../api';
-
-const BASE = (import.meta as any).env?.VITE_API_URL ?? 'http://localhost:3000/api/v1';
 
 function formatBytes(bytes: number) {
   if (bytes < 1024) return `${bytes} B`;
@@ -40,6 +38,52 @@ export default function AttachmentPanel({ ticketId, attachments, onRefresh, canD
   const [uploading, setUploading] = useState(false);
   const [uploadErr, setUploadErr] = useState('');
   const [preview, setPreview] = useState<Attachment | null>(null);
+  const [previewSrc, setPreviewSrc] = useState<string | null>(null);
+  const [previewLoading, setPreviewLoading] = useState(false);
+  const [downloadingId, setDownloadingId] = useState<string | null>(null);
+
+  // The attachment endpoints require the Bearer token, so a plain <img>/<a href>
+  // hits them unauthenticated ("Missing access token"). Fetch through axios
+  // (which attaches the token) as a blob and serve a local object URL instead.
+  useEffect(() => {
+    if (!preview) { setPreviewSrc(null); return; }
+    let revoked = false;
+    let url: string | null = null;
+    setPreviewLoading(true);
+    setPreviewSrc(null);
+    (async () => {
+      try {
+        const res = await api.get(`/attachments/${preview.id}/preview`, { responseType: 'blob' });
+        if (revoked) return;
+        url = URL.createObjectURL(res.data);
+        setPreviewSrc(url);
+      } catch {
+        /* leave previewSrc null — body shows an error */
+      } finally {
+        if (!revoked) setPreviewLoading(false);
+      }
+    })();
+    return () => { revoked = true; if (url) URL.revokeObjectURL(url); };
+  }, [preview]);
+
+  async function downloadAttachment(a: Attachment) {
+    setDownloadingId(a.id);
+    try {
+      const res = await api.get(`/attachments/${a.id}`, { responseType: 'blob' });
+      const url = URL.createObjectURL(new Blob([res.data], { type: a.mimeType }));
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = a.fileName;
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      URL.revokeObjectURL(url);
+    } catch {
+      setUploadErr('Download failed — please try again.');
+    } finally {
+      setDownloadingId(null);
+    }
+  }
 
   async function handleUpload(files: FileList | null) {
     if (!files || files.length === 0) return;
@@ -68,14 +112,6 @@ export default function AttachmentPanel({ ticketId, attachments, onRefresh, canD
       await api.delete(`/attachments/${id}`);
       onRefresh();
     } catch { /* ignore */ }
-  }
-
-  function downloadUrl(id: string) {
-    return `${BASE}/attachments/${id}`;
-  }
-
-  function previewUrl(id: string) {
-    return `${BASE}/attachments/${id}/preview`;
   }
 
   return (
@@ -132,14 +168,13 @@ export default function AttachmentPanel({ ticketId, attachments, onRefresh, canD
                     onClick={() => setPreview(a)}
                   >👁</button>
                 )}
-                <a
-                  href={downloadUrl(a.id)}
+                <button
+                  type="button"
                   className="btn btn-ghost btn-xs"
                   title="Download"
-                  download={a.fileName}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                >⬇</a>
+                  disabled={downloadingId === a.id}
+                  onClick={() => downloadAttachment(a)}
+                >{downloadingId === a.id ? <span className="spinner" style={{ width: 11, height: 11 }} /> : '⬇'}</button>
                 {canDelete && (
                   <button
                     type="button"
@@ -162,21 +197,24 @@ export default function AttachmentPanel({ ticketId, attachments, onRefresh, canD
             <div className="preview-modal-header">
               <span style={{ fontSize: 13, fontWeight: 500 }}>{preview.fileName}</span>
               <div style={{ display: 'flex', gap: 8 }}>
-                <a
-                  href={downloadUrl(preview.id)}
+                <button
+                  type="button"
                   className="btn btn-secondary btn-xs"
-                  download={preview.fileName}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                >Download</a>
+                  disabled={downloadingId === preview.id}
+                  onClick={() => downloadAttachment(preview)}
+                >{downloadingId === preview.id ? 'Downloading…' : 'Download'}</button>
                 <button type="button" className="btn btn-ghost btn-xs" onClick={() => setPreview(null)}>✕</button>
               </div>
             </div>
             <div className="preview-modal-body">
-              {preview.mimeType.startsWith('image/') ? (
-                <img src={previewUrl(preview.id)} alt={preview.fileName} style={{ maxWidth: '100%', maxHeight: '70vh', objectFit: 'contain' }} />
+              {previewLoading ? (
+                <div style={{ padding: 40, textAlign: 'center', color: 'var(--text-3)' }}><span className="spinner" /> Loading preview…</div>
+              ) : !previewSrc ? (
+                <div style={{ padding: 40, textAlign: 'center', color: 'var(--text-3)' }}>Couldn’t load preview.</div>
+              ) : preview.mimeType.startsWith('image/') ? (
+                <img src={previewSrc} alt={preview.fileName} style={{ maxWidth: '100%', maxHeight: '70vh', objectFit: 'contain' }} />
               ) : preview.mimeType === 'application/pdf' ? (
-                <iframe src={previewUrl(preview.id)} style={{ width: '100%', height: '70vh', border: 'none' }} title={preview.fileName} />
+                <iframe src={previewSrc} style={{ width: '100%', height: '70vh', border: 'none' }} title={preview.fileName} />
               ) : null}
             </div>
           </div>

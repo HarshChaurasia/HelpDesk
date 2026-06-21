@@ -25,6 +25,7 @@ export default function NewTicket() {
   const [priority, setPriority] = useState('MEDIUM');
   const [assignees, setAssignees] = useState<UserOption[]>([]);
   const [deliveryDate, setDeliveryDate] = useState('');
+  const [estimatedEffort, setEstimatedEffort] = useState('');
   const [showSystem, setShowSystem] = useState(false);
   const [sys, setSys] = useState({ product: '', module: '', version: '', browser: '', os: '' });
   const [err, setErr] = useState('');
@@ -58,6 +59,7 @@ export default function NewTicket() {
         subcategoryId: subcategoryId || undefined,
         assigneeIds: assignees.map((a) => a.id),
         deliveryDate: deliveryDate ? new Date(deliveryDate).toISOString() : undefined,
+        estimatedEffortHours: estimatedEffort ? parseFloat(estimatedEffort) : undefined,
         systemProduct: sys.product || undefined,
         systemModule: sys.module || undefined,
         systemVersion: sys.version || undefined,
@@ -145,15 +147,29 @@ export default function NewTicket() {
             );
           })()}
 
-          <div className="form-group">
-            <label className="form-label">Delivery / Due Date</label>
-            <input
-              type="datetime-local"
-              value={deliveryDate}
-              onChange={(e) => setDeliveryDate(e.target.value)}
-              style={{ maxWidth: 280 }}
-            />
-            <span className="form-hint">Optional. When this request is expected to be delivered or resolved.</span>
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0 16px' }}>
+            <div className="form-group">
+              <label className="form-label">Delivery / Due Date</label>
+              <input
+                type="datetime-local"
+                value={deliveryDate}
+                onChange={(e) => setDeliveryDate(e.target.value)}
+              />
+              <span className="form-hint">When this request is expected to be delivered.</span>
+            </div>
+
+            <div className="form-group">
+              <label className="form-label">Estimated Effort (hours)</label>
+              <input
+                type="number"
+                min="0"
+                step="0.5"
+                placeholder="e.g. 6"
+                value={estimatedEffort}
+                onChange={(e) => setEstimatedEffort(e.target.value)}
+              />
+              <span className="form-hint">Rough estimate of work required.</span>
+            </div>
           </div>
 
           {/* System details (collapsible — optional) */}

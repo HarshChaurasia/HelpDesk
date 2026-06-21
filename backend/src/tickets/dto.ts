@@ -24,6 +24,7 @@ export class CreateTicketDto {
   @IsOptional() @IsArray() attachmentIds?: string[];
   @IsOptional() @IsArray() @IsUUID('4', { each: true }) assigneeIds?: string[];
   @IsOptional() @IsDateString() deliveryDate?: string;
+  @IsOptional() @IsNumber() @Min(0) estimatedEffortHours?: number;
   @IsOptional() @IsString() systemProduct?: string;
   @IsOptional() @IsString() systemModule?: string;
   @IsOptional() @IsString() systemVersion?: string;
@@ -37,6 +38,7 @@ export class UpdateTicketDto {
   @IsOptional() @IsUUID() categoryId?: string;
   @IsOptional() @IsUUID() subcategoryId?: string;
   @IsOptional() @IsDateString() deliveryDate?: string;
+  @IsOptional() @IsNumber() @Min(0) estimatedEffortHours?: number;
   @IsOptional() @IsString() resolutionSummary?: string;
   @IsOptional() @IsString() rootCause?: string;
   @IsOptional() @IsString() correctiveAction?: string;

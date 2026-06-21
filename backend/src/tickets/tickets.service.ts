@@ -128,6 +128,7 @@ export class TicketsService {
         categoryId: dto.categoryId ?? null,
         subcategoryId: dto.subcategoryId ?? null,
         deliveryDate: dto.deliveryDate ? new Date(dto.deliveryDate) : null,
+        estimatedEffortHours: dto.estimatedEffortHours ?? null,
         systemProduct: dto.systemProduct ?? null,
         systemModule: dto.systemModule ?? null,
         systemVersion: dto.systemVersion ?? null,

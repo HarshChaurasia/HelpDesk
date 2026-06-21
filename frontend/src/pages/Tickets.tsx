@@ -445,6 +445,7 @@ export default function Tickets() {
                 <th className="sortable" onClick={() => toggleSort('category')}>
                   Category <SortIcon field="category" />
                 </th>
+                <th>Subcategory</th>
                 <th>Customer</th>
                 {isStaff && <th>Assignee</th>}
                 <th className="sortable" onClick={() => toggleSort('createdAt')}>
@@ -459,7 +460,7 @@ export default function Tickets() {
             <tbody>
               {tickets.length === 0 ? (
                 <tr>
-                  <td colSpan={isStaff ? 12 : 10}>
+                  <td colSpan={isStaff ? 13 : 11}>
                     <div className="empty-state">
                       <div className="empty-state-icon">🎫</div>
                       <div className="empty-state-title">No tickets found</div>
@@ -505,7 +506,9 @@ export default function Tickets() {
                     <td><SlaStatusBadge ticket={t} /></td>
                     <td style={{ fontSize: 12.5, color: 'var(--text-2)' }}>
                       {t.category?.name ?? <span className="muted">—</span>}
-                      {t.subcategory && <span style={{ color: 'var(--text-3)' }}> / {t.subcategory.name}</span>}
+                    </td>
+                    <td style={{ fontSize: 12.5, color: 'var(--text-2)' }}>
+                      {t.subcategory?.name ?? <span className="muted">—</span>}
                     </td>
                     <td>
                       {t.createdBy?.fullName ? (
