@@ -5,7 +5,7 @@ import {
   useState,
   ReactNode,
 } from 'react';
-import { api, setToken } from './api';
+import { api, setToken, doRefresh } from './api';
 import { getStoredRefreshToken, setStoredRefreshToken } from './token-store';
 
 export interface User {
@@ -33,14 +33,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     (async () => {
-      const rt = getStoredRefreshToken();
-      if (!rt) { setLoading(false); return; }
       try {
-        const { data } = await api.post('/auth/refresh', { refreshToken: rt }, { timeout: 5000 });
-        setToken(data.accessToken);
-        setStoredRefreshToken(data.refreshToken);
+        const data = await doRefresh();
         setUser(data.user);
       } catch {
+        setToken(null);
         setStoredRefreshToken(null);
       } finally {
         setLoading(false);

@@ -1,10 +1,9 @@
 import axios from 'axios';
 import { getStoredRefreshToken, setStoredRefreshToken } from './token-store';
 
-export const api = axios.create({
-  baseURL: (import.meta.env.VITE_API_URL ?? '').replace(/\/+$/, '') + '/api/v1',
-  timeout: 10000,
-});
+const BASE = (import.meta.env.VITE_API_URL ?? '').replace(/\/+$/, '') + '/api/v1';
+
+export const api = axios.create({ baseURL: BASE, timeout: 10000 });
 
 let accessToken: string | null = null;
 export function setToken(t: string | null) { accessToken = t; }
@@ -14,7 +13,26 @@ api.interceptors.request.use((cfg) => {
   return cfg;
 });
 
-let refreshing: Promise<string> | null = null;
+// Single shared refresh promise — both AuthProvider bootstrap and 401 interceptor use this.
+// Using plain axios (not api) for the refresh call itself to avoid recursive interception.
+let refreshing: Promise<{ accessToken: string; refreshToken: string; user: any }> | null = null;
+
+export function doRefresh(): Promise<{ accessToken: string; refreshToken: string; user: any }> {
+  if (refreshing) return refreshing;
+  const rt = getStoredRefreshToken();
+  if (!rt) return Promise.reject(new Error('No refresh token'));
+  refreshing = axios
+    .post(`${BASE}/auth/refresh`, { refreshToken: rt }, { timeout: 8000 })
+    .then((res) => {
+      setToken(res.data.accessToken);
+      setStoredRefreshToken(res.data.refreshToken);
+      return res.data as { accessToken: string; refreshToken: string; user: any };
+    })
+    .finally(() => {
+      refreshing = null;
+    });
+  return refreshing;
+}
 
 api.interceptors.response.use(
   (r) => r,
@@ -23,23 +41,10 @@ api.interceptors.response.use(
     if (err.response?.status === 401 && !original._retry) {
       original._retry = true;
       try {
-        const rt = getStoredRefreshToken();
-        if (!rt) throw new Error('No refresh token');
-        refreshing =
-          refreshing ??
-          api
-            .post('/auth/refresh', { refreshToken: rt })
-            .then((res) => {
-              setStoredRefreshToken(res.data.refreshToken);
-              return res.data.accessToken as string;
-            });
-        const token = await refreshing;
-        refreshing = null;
-        setToken(token);
-        original.headers.Authorization = `Bearer ${token}`;
+        const data = await doRefresh();
+        original.headers.Authorization = `Bearer ${data.accessToken}`;
         return api(original);
       } catch {
-        refreshing = null;
         setToken(null);
         setStoredRefreshToken(null);
         window.location.href = '/login';
