@@ -206,6 +206,24 @@ export default function TicketDetail() {
     enabled: user?.role !== 'CUSTOMER',
   });
 
+  const { data: mergeResults } = useQuery({
+    queryKey: ['tickets-merge-search', mergeSearch],
+    queryFn: async () => {
+      if (!mergeSearch || mergeSearch.length < 2) return { data: [] };
+      return (await api.get('/tickets', { params: { q: mergeSearch, limit: 8 } })).data;
+    },
+    enabled: showMerge && mergeSearch.length >= 2,
+  });
+
+  const { data: relatedResults } = useQuery({
+    queryKey: ['tickets-related-search', relatedSearch],
+    queryFn: async () => {
+      if (!relatedSearch || relatedSearch.length < 2) return { data: [] };
+      return (await api.get('/tickets', { params: { q: relatedSearch, limit: 8 } })).data;
+    },
+    enabled: showRelatedSearch && relatedSearch.length >= 2,
+  });
+
   // Reset draft when ticket reloads
   useEffect(() => { if (t) setDraft({}); }, [t?.id]);
 
@@ -349,24 +367,6 @@ export default function TicketDetail() {
     await api.post(`/tickets/${id}/de-escalate`);
     refresh();
   }
-
-  const { data: mergeResults } = useQuery({
-    queryKey: ['tickets-merge-search', mergeSearch],
-    queryFn: async () => {
-      if (!mergeSearch || mergeSearch.length < 2) return { data: [] };
-      return (await api.get('/tickets', { params: { q: mergeSearch, limit: 8 } })).data;
-    },
-    enabled: showMerge && mergeSearch.length >= 2,
-  });
-
-  const { data: relatedResults } = useQuery({
-    queryKey: ['tickets-related-search', relatedSearch],
-    queryFn: async () => {
-      if (!relatedSearch || relatedSearch.length < 2) return { data: [] };
-      return (await api.get('/tickets', { params: { q: relatedSearch, limit: 8 } })).data;
-    },
-    enabled: showRelatedSearch && relatedSearch.length >= 2,
-  });
 
   async function doMerge() {
     if (!mergeTarget) return;
