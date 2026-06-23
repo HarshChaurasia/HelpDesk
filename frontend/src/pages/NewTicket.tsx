@@ -24,6 +24,7 @@ export default function NewTicket() {
   const [subcategoryId, setSubcategoryId] = useState('');
   const [priority, setPriority] = useState('MEDIUM');
   const [assignees, setAssignees] = useState<UserOption[]>([]);
+  const [requester, setRequester] = useState<UserOption[]>([]);
   const [deliveryDate, setDeliveryDate] = useState('');
   const [estimatedEffort, setEstimatedEffort] = useState('');
   const [showSystem, setShowSystem] = useState(false);
@@ -44,6 +45,12 @@ export default function NewTicket() {
     enabled: isStaff,
   });
 
+  const { data: customers = [] } = useQuery<UserOption[]>({
+    queryKey: ['customers'],
+    queryFn: async () => (await api.get('/users/customers')).data,
+    enabled: isStaff,
+  });
+
   async function submit(e: React.FormEvent) {
     e.preventDefault();
     const descText = description.replace(/<[^>]*>/g, '').trim();
@@ -57,6 +64,7 @@ export default function NewTicket() {
         priority,
         categoryId: categoryId || undefined,
         subcategoryId: subcategoryId || undefined,
+        requesterId: requester[0]?.id,
         assigneeIds: assignees.map((a) => a.id),
         deliveryDate: deliveryDate ? new Date(deliveryDate).toISOString() : undefined,
         estimatedEffortHours: estimatedEffort ? parseFloat(estimatedEffort) : undefined,
@@ -90,6 +98,20 @@ export default function NewTicket() {
 
       <div className="card">
         <form onSubmit={submit}>
+          {isStaff && (
+            <div className="form-group">
+              <label className="form-label">Requester</label>
+              <UserCombobox
+                users={customers}
+                selected={requester}
+                onChange={setRequester}
+                placeholder="Search customers… (defaults to you)"
+                multi={false}
+              />
+              <span className="form-hint">Raise this ticket on behalf of a customer. Leave blank to use your own account.</span>
+            </div>
+          )}
+
           <div className="form-group">
             <label className="form-label">Subject <span style={{ color: '#ef4444' }}>*</span></label>
             <input

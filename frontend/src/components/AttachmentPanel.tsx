@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { api } from '../api';
+import { useUi } from '../ui';
 
 function formatBytes(bytes: number) {
   if (bytes < 1024) return `${bytes} B`;
@@ -34,6 +35,7 @@ interface Props {
 }
 
 export default function AttachmentPanel({ ticketId, attachments, onRefresh, canDelete = true }: Props) {
+  const { toast, confirm } = useUi();
   const inputRef = useRef<HTMLInputElement>(null);
   const [uploading, setUploading] = useState(false);
   const [uploadErr, setUploadErr] = useState('');
@@ -107,11 +109,15 @@ export default function AttachmentPanel({ ticketId, attachments, onRefresh, canD
   }
 
   async function handleDelete(id: string) {
-    if (!confirm('Delete this attachment?')) return;
+    const ok = await confirm({ title: 'Delete attachment', message: 'Delete this attachment? This cannot be undone.', confirmLabel: 'Delete', danger: true });
+    if (!ok) return;
     try {
       await api.delete(`/attachments/${id}`);
       onRefresh();
-    } catch { /* ignore */ }
+      toast.success('Attachment deleted');
+    } catch {
+      toast.error('Could not delete attachment');
+    }
   }
 
   return (
@@ -165,6 +171,7 @@ export default function AttachmentPanel({ ticketId, attachments, onRefresh, canD
                     type="button"
                     className="btn btn-ghost btn-xs"
                     title="Preview"
+                    aria-label={`Preview ${a.fileName}`}
                     onClick={() => setPreview(a)}
                   >👁</button>
                 )}
@@ -172,6 +179,7 @@ export default function AttachmentPanel({ ticketId, attachments, onRefresh, canD
                   type="button"
                   className="btn btn-ghost btn-xs"
                   title="Download"
+                  aria-label={`Download ${a.fileName}`}
                   disabled={downloadingId === a.id}
                   onClick={() => downloadAttachment(a)}
                 >{downloadingId === a.id ? <span className="spinner" style={{ width: 11, height: 11 }} /> : '⬇'}</button>
@@ -180,6 +188,7 @@ export default function AttachmentPanel({ ticketId, attachments, onRefresh, canD
                     type="button"
                     className="btn btn-ghost btn-xs"
                     title="Delete"
+                    aria-label={`Delete ${a.fileName}`}
                     style={{ color: '#dc2626' }}
                     onClick={() => handleDelete(a.id)}
                   >🗑</button>

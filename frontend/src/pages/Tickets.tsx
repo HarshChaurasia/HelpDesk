@@ -3,6 +3,7 @@ import { Link, useNavigate } from 'react-router-dom';
 import { useState, useMemo } from 'react';
 import { api } from '../api';
 import { useAuth } from '../auth';
+import { useUi } from '../ui';
 import { STATUS_LABELS, PRIORITY_LABELS, PRIORITY_SHORT, avatarInitials, avatarStyle, relativeTime } from '../utils';
 
 const STATUS_OPTIONS = ['NEW', 'OPEN', 'IN_PROGRESS', 'PENDING_CUSTOMER', 'RESOLVED', 'CLOSED', 'REOPENED'];
@@ -50,6 +51,7 @@ export default function Tickets() {
   const { user } = useAuth();
   const qc = useQueryClient();
   const navigate = useNavigate();
+  const { toast, confirm } = useUi();
 
   // Filters
   const [search, setSearch] = useState('');
@@ -62,6 +64,18 @@ export default function Tickets() {
   // Sort
   const [sort, setSort] = useState<SortField>('createdAt');
   const [dir, setDir] = useState<'asc' | 'desc'>('desc');
+
+  // Table density (persisted)
+  const [density, setDensity] = useState<'comfortable' | 'compact'>(
+    () => (localStorage.getItem('hd_density') as 'comfortable' | 'compact') ?? 'comfortable',
+  );
+  function toggleDensity() {
+    setDensity((d) => {
+      const next = d === 'comfortable' ? 'compact' : 'comfortable';
+      localStorage.setItem('hd_density', next);
+      return next;
+    });
+  }
 
   // Bulk select
   const [selected, setSelected] = useState<Set<string>>(new Set());
@@ -149,21 +163,47 @@ export default function Tickets() {
     try {
       await api.post(`/tickets/${id}/status`, { status: 'RESOLVED' });
       qc.invalidateQueries({ queryKey: ['tickets'] });
+      toast.success('Ticket marked resolved');
     } catch (e: any) {
-      alert(e.response?.data?.error?.message ?? 'Failed to resolve ticket');
+      toast.error(e.response?.data?.error?.message ?? 'Failed to resolve ticket');
+    }
+  }
+
+  async function downloadTicketPdf(t: any) {
+    try {
+      const res = await api.get(`/tickets/${t.id}/pdf`, { responseType: 'blob' });
+      const url = URL.createObjectURL(new Blob([res.data], { type: 'application/pdf' }));
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `ticket-${t.reference}.pdf`;
+      a.click();
+      URL.revokeObjectURL(url);
+    } catch {
+      toast.error('Could not download PDF');
     }
   }
 
   async function runBulk() {
     if (!bulkAction || selected.size === 0) return;
     const ids = Array.from(selected);
+    const count = ids.length;
+    if (bulkAction === 'delete') {
+      const ok = await confirm({
+        title: 'Delete tickets',
+        message: `Permanently delete ${count} ticket${count === 1 ? '' : 's'}? This cannot be undone.`,
+        confirmLabel: 'Delete',
+        danger: true,
+      });
+      if (!ok) return;
+    }
     try {
       await api.post('/tickets/bulk', { ids, action: bulkAction });
       qc.invalidateQueries({ queryKey: ['tickets'] });
       setSelected(new Set());
       setBulkAction('');
+      toast.success(`Updated ${count} ticket${count === 1 ? '' : 's'}`);
     } catch (e: any) {
-      alert(e.response?.data?.error?.message ?? 'Bulk action failed');
+      toast.error(e.response?.data?.error?.message ?? 'Bulk action failed');
     }
   }
 
@@ -244,6 +284,12 @@ export default function Tickets() {
               </button>
             </>
           )}
+          <button
+            className="btn btn-secondary btn-sm"
+            onClick={toggleDensity}
+            title={density === 'comfortable' ? 'Switch to compact rows' : 'Switch to comfortable rows'}
+            aria-label="Toggle table density"
+          >{density === 'comfortable' ? '≣ Compact' : '≡ Comfortable'}</button>
           <button className="btn btn-secondary btn-sm" onClick={exportCsv}>↓ CSV</button>
           <button className="btn btn-secondary btn-sm" onClick={exportXlsx}>↓ XLSX</button>
           <Link to="/tickets/new" className="btn btn-primary btn-sm">+ New Ticket</Link>
@@ -411,8 +457,10 @@ export default function Tickets() {
 
       {/* Table */}
       {isLoading ? (
-        <div style={{ flex: 1, padding: 40, textAlign: 'center', color: 'var(--text-3)', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 10 }}>
-          <span className="spinner" /> Loading tickets…
+        <div className="table-wrap" style={{ flex: 1, padding: '8px 4px' }} aria-busy="true" aria-label="Loading tickets">
+          {Array.from({ length: 8 }).map((_, i) => (
+            <div key={i} className="skeleton skeleton-row" style={{ width: `${90 - (i % 4) * 8}%` }} />
+          ))}
         </div>
       ) : isError ? (
         <div className="alert alert-error">
@@ -420,7 +468,7 @@ export default function Tickets() {
           <a href="javascript:void(0)" onClick={() => window.location.reload()}>Retry</a>
         </div>
       ) : (
-        <div className="table-wrap" style={{ flex: 1, overflowY: 'auto', minHeight: 0 }}>
+        <div className={`table-wrap density-${density}`} style={{ flex: 1, overflowY: 'auto', minHeight: 0 }}>
           <table>
             <thead>
               <tr>
@@ -534,20 +582,23 @@ export default function Tickets() {
                       <div className="row-actions">
                         <button
                           className="btn btn-ghost btn-xs"
-                          title="View ticket"
-                          onClick={() => navigate(`/tickets/${t.id}`)}
-                        >View</button>
+                          title="Add comment"
+                          aria-label={`Add comment to ${t.reference}`}
+                          onClick={() => navigate(`/tickets/${t.id}#compose`)}
+                        >💬</button>
                         <button
                           className="btn btn-ghost btn-xs"
-                          title="Add comment"
-                          onClick={() => navigate(`/tickets/${t.id}#compose`)}
-                        >Comment</button>
+                          title="Download PDF"
+                          aria-label={`Download PDF for ${t.reference}`}
+                          onClick={() => downloadTicketPdf(t)}
+                        >↓</button>
                         {isStaff && !['RESOLVED', 'CLOSED'].includes(t.status) && (
                           <button
                             className="btn btn-ghost btn-xs"
                             title="Resolve ticket"
+                            aria-label={`Resolve ${t.reference}`}
                             onClick={() => quickResolve(t.id)}
-                          >Resolve</button>
+                          >✓</button>
                         )}
                       </div>
                     </td>

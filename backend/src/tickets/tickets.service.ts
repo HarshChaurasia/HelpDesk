@@ -119,6 +119,19 @@ export class TicketsService {
     const priority = dto.priority ?? Priority.MEDIUM;
     const sla = await this.computeSla(priority, dto.categoryId);
     const reference = await this.nextReference();
+
+    // Staff may raise a ticket on behalf of a customer; customers always own
+    // their own tickets. The requester becomes the ticket creator, while the
+    // acting staff member is still added as a watcher.
+    const isStaff = user.role === Role.AGENT || user.role === Role.ADMIN;
+    let requesterId = user.id;
+    if (isStaff && dto.requesterId) {
+      const requester = await this.prisma.user.findUnique({ where: { id: dto.requesterId } });
+      if (!requester) throw new NotFoundException('Requester not found');
+      requesterId = requester.id;
+    }
+    const watcherIds = Array.from(new Set([requesterId, user.id]));
+
     const ticket = await this.prisma.ticket.create({
       data: {
         reference,
@@ -134,7 +147,7 @@ export class TicketsService {
         systemVersion: dto.systemVersion ?? null,
         systemBrowser: dto.systemBrowser ?? null,
         systemOs: dto.systemOs ?? null,
-        createdById: user.id,
+        createdById: requesterId,
         ...sla,
         messages: {
           create: {
@@ -144,7 +157,7 @@ export class TicketsService {
             channel: Channel.WEB,
           },
         },
-        watchers: { create: { userId: user.id } },
+        watchers: { create: watcherIds.map((uid) => ({ userId: uid })) },
         ...(dto.assigneeIds?.length
           ? {
               assignedToId: dto.assigneeIds[0],

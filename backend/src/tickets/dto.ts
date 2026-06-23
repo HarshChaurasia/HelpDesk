@@ -18,6 +18,8 @@ import { Priority, TicketStatus, MessageType, TimeLogType, ChangeRequestStatus }
 export class CreateTicketDto {
   @IsString() @MinLength(3) subject: string;
   @IsString() @MinLength(1) description: string;
+  // Staff only: raise the ticket on behalf of this customer. Ignored for customers.
+  @IsOptional() @IsUUID() requesterId?: string;
   @IsOptional() @IsUUID() categoryId?: string;
   @IsOptional() @IsUUID() subcategoryId?: string;
   @IsOptional() @IsEnum(Priority) priority?: Priority;

@@ -1013,8 +1013,10 @@ tbody tr:hover { background: #fafbfc; }
 }
 
 @media (max-width: 1100px) {
-  .ticket-layout-3col { grid-template-columns: 1fr 240px; }
-  .ticket-activity-col { display: none; }
+  /* Drop to 2 columns but keep Activity reachable — span it full-width below
+     instead of hiding it (audit history shouldn't disappear on laptops). */
+  .ticket-layout-3col { grid-template-columns: 1fr 260px; }
+  .ticket-activity-col { grid-column: 1 / -1; }
 }
 @media (max-width: 768px) {
   .ticket-layout-3col { grid-template-columns: 1fr; }
@@ -1644,3 +1646,114 @@ tbody tr:hover .row-actions { opacity: 1; }
   border-top: 1px solid var(--border-strong) !important;
   border-bottom: none !important;
 }
+
+/* ═══════════════════════════════════════════════════════
+   Toasts
+═══════════════════════════════════════════════════════ */
+.toast-stack {
+  position: fixed;
+  bottom: 20px;
+  right: 20px;
+  z-index: 1000;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  max-width: 360px;
+}
+.toast {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 11px 14px;
+  border-radius: 10px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  box-shadow: 0 8px 24px rgba(15, 23, 42, .14);
+  font-size: 13px;
+  color: var(--text);
+  animation: toast-in .18s ease-out;
+}
+@keyframes toast-in { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: none; } }
+.toast-icon {
+  flex-shrink: 0;
+  width: 18px; height: 18px;
+  display: inline-flex; align-items: center; justify-content: center;
+  border-radius: 50%;
+  font-size: 11px; font-weight: 700; color: #fff;
+}
+.toast-success { border-left: 3px solid #16a34a; }
+.toast-success .toast-icon { background: #16a34a; }
+.toast-error { border-left: 3px solid #dc2626; }
+.toast-error .toast-icon { background: #dc2626; }
+.toast-info { border-left: 3px solid var(--brand); }
+.toast-info .toast-icon { background: var(--brand); }
+.toast-close {
+  margin-left: auto;
+  border: none; background: none; cursor: pointer;
+  color: var(--text-3); font-size: 12px; padding: 0 2px;
+}
+.toast-close:hover { color: var(--text); }
+
+/* ═══════════════════════════════════════════════════════
+   Sticky unsaved-changes save bar (ticket detail)
+═══════════════════════════════════════════════════════ */
+.save-bar {
+  position: fixed;
+  bottom: 20px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 900;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 14px;
+  background: var(--surface);
+  border: 1px solid var(--border-strong);
+  border-radius: 12px;
+  box-shadow: 0 10px 30px rgba(15, 23, 42, .18);
+  animation: toast-in .18s ease-out;
+}
+.save-bar-text { font-size: 13px; font-weight: 500; color: var(--text); }
+
+/* ═══════════════════════════════════════════════════════
+   Ticket list density toggle
+═══════════════════════════════════════════════════════ */
+.table-wrap.density-compact table td,
+.table-wrap.density-compact table th { padding-top: 5px; padding-bottom: 5px; }
+.table-wrap.density-compact table { font-size: 12.5px; }
+
+/* ═══════════════════════════════════════════════════════
+   Skeleton loaders
+═══════════════════════════════════════════════════════ */
+.skeleton {
+  background: linear-gradient(90deg, var(--surface-sunken) 25%, var(--border) 37%, var(--surface-sunken) 63%);
+  background-size: 400% 100%;
+  animation: skeleton-shimmer 1.2s ease-in-out infinite;
+  border-radius: 6px;
+}
+@keyframes skeleton-shimmer { 0% { background-position: 100% 0; } 100% { background-position: -100% 0; } }
+.skeleton-row { height: 14px; margin: 10px 0; }
+
+/* ═══════════════════════════════════════════════════════
+   Dark theme
+═══════════════════════════════════════════════════════ */
+:root[data-theme="dark"] {
+  --bg: #0b1120;
+  --surface: #111827;
+  --surface-sunken: #0f172a;
+  --border: #1f2937;
+  --border-strong: #374151;
+
+  --text: #e5e7eb;
+  --text-2: #9ca3af;
+  --text-3: #6b7280;
+
+  --brand-bg: #1e293b;
+}
+:root[data-theme="dark"] body { background: var(--bg); color: var(--text); }
+:root[data-theme="dark"] .toast { box-shadow: 0 8px 24px rgba(0, 0, 0, .5); }
+.theme-toggle-btn {
+  border: none; background: none; cursor: pointer;
+  font-size: 16px; padding: 4px 8px; border-radius: 8px; color: var(--side-text);
+}
+.theme-toggle-btn:hover { background: var(--side-hover); color: var(--side-text-active); }

@@ -9,8 +9,30 @@ import AdminSettings from './pages/AdminSettings';
 import Reports from './pages/Reports';
 import Sla from './pages/Sla';
 import NotificationBell from './components/NotificationBell';
-import { ReactNode } from 'react';
+import { ReactNode, useEffect, useState } from 'react';
 import { avatarInitials, avatarStyle } from './utils';
+
+/* ─── Dark / light theme toggle ─── */
+function ThemeToggle() {
+  const [theme, setTheme] = useState<'light' | 'dark'>(
+    () => (localStorage.getItem('hd_theme') as 'light' | 'dark') ?? 'light',
+  );
+  useEffect(() => {
+    document.documentElement.setAttribute('data-theme', theme);
+    localStorage.setItem('hd_theme', theme);
+  }, [theme]);
+  return (
+    <button
+      className="theme-toggle-btn"
+      type="button"
+      title={theme === 'light' ? 'Switch to dark mode' : 'Switch to light mode'}
+      aria-label="Toggle dark mode"
+      onClick={() => setTheme((t) => (t === 'light' ? 'dark' : 'light'))}
+    >
+      {theme === 'light' ? '🌙' : '☀️'}
+    </button>
+  );
+}
 
 /* ─── Inline SVG icons ─── */
 function IconTickets() {
@@ -152,6 +174,7 @@ function Layout({ children }: { children: ReactNode }) {
       <div className="main-content">
         <header className="topbar">
           <div className="topbar-spacer" />
+          <ThemeToggle />
           <NotificationBell />
         </header>
         <div className="page-body">{children}</div>

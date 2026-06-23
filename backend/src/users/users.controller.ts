@@ -88,6 +88,29 @@ export class UsersController {
     return users;
   }
 
+  // Customer lookup for staff raising a ticket on a customer's behalf.
+  // Declared before ':id' so the static path wins the route match.
+  @Roles('ADMIN', 'AGENT')
+  @Get('customers')
+  async customers(@Query('q') q?: string) {
+    const users = await this.prisma.user.findMany({
+      where: {
+        role: 'CUSTOMER',
+        isActive: true,
+        OR: q
+          ? [
+              { email: { contains: q, mode: 'insensitive' } },
+              { fullName: { contains: q, mode: 'insensitive' } },
+            ]
+          : undefined,
+      },
+      select: { id: true, fullName: true, email: true, role: true },
+      take: 20,
+      orderBy: { fullName: 'asc' },
+    });
+    return users;
+  }
+
   @Roles('ADMIN')
   @Post()
   async create(@Body() dto: CreateUserDto) {

@@ -4,6 +4,7 @@ import { useState, useRef, useEffect } from 'react';
 import DOMPurify from 'dompurify';
 import { api } from '../api';
 import { useAuth } from '../auth';
+import { useUi } from '../ui';
 import { STATUS_LABELS, PRIORITY_LABELS, avatarInitials, avatarStyle, relativeTime, formatDate } from '../utils';
 import RichTextEditor from '../components/RichTextEditor';
 import UserCombobox, { UserOption } from '../components/UserCombobox';
@@ -59,11 +60,11 @@ function ReactionBar({ message, ticketId, currentUserId, onRefresh }: {
         </button>
       ))}
       <div style={{ position: 'relative' }}>
-        <button type="button" className="btn btn-ghost btn-xs reaction-add-btn" onClick={() => setShowPicker((p) => !p)}>😊+</button>
+        <button type="button" className="btn btn-ghost btn-xs reaction-add-btn" aria-label="Add reaction" title="Add reaction" onClick={() => setShowPicker((p) => !p)}>😊+</button>
         {showPicker && (
           <div className="emoji-picker">
             {EMOJI_PICKER.map((e) => (
-              <button key={e} type="button" className="emoji-pick-btn" onClick={() => toggle(e)}>{e}</button>
+              <button key={e} type="button" className="emoji-pick-btn" aria-label={`React with ${e}`} onClick={() => toggle(e)}>{e}</button>
             ))}
           </div>
         )}
@@ -115,6 +116,7 @@ function CollapsibleCard({
 export default function TicketDetail() {
   const { id } = useParams<{ id: string }>();
   const { user } = useAuth();
+  const { toast, confirm } = useUi();
   const qc = useQueryClient();
 
   // Compose
@@ -229,6 +231,19 @@ export default function TicketDetail() {
   // Reset draft when ticket reloads
   useEffect(() => { if (t) setDraft({}); }, [t?.id]);
 
+  // Close any open modal on Escape.
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== 'Escape') return;
+      setShowResolution(false);
+      setShowMerge(false);
+      setShowCR(false);
+      setShowEscalate(false);
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, []);
+
   const refresh = () => qc.invalidateQueries({ queryKey: ['ticket', id] });
   const isStaff = user?.role !== 'CUSTOMER';
 
@@ -263,7 +278,14 @@ export default function TicketDetail() {
       await api.patch(`/tickets/${id}`, draft);
       setDraft({});
       refresh();
+      toast.success('Changes saved');
+    } catch (e: any) {
+      toast.error(e.response?.data?.error?.message ?? 'Could not save changes');
     } finally { setSaving(false); }
+  }
+
+  function discardChanges() {
+    setDraft({});
   }
 
   async function sendMessage(e: React.FormEvent) {
@@ -293,9 +315,11 @@ export default function TicketDetail() {
     setEditingId(null); refresh();
   }
   async function deleteMessage(msgId: string) {
-    if (!confirm('Delete this message?')) return;
+    const ok = await confirm({ title: 'Delete message', message: 'Delete this message? This cannot be undone.', confirmLabel: 'Delete', danger: true });
+    if (!ok) return;
     await api.delete(`/tickets/${id}/messages/${msgId}`);
     refresh();
+    toast.success('Message deleted');
   }
 
   async function toggleTag(tagId: string) {
@@ -365,17 +389,21 @@ export default function TicketDetail() {
   }
 
   async function doDeEscalate() {
-    if (!confirm('Remove the escalation on this ticket?')) return;
+    const ok = await confirm({ title: 'Remove escalation', message: 'Remove the escalation on this ticket?', confirmLabel: 'Remove' });
+    if (!ok) return;
     await api.post(`/tickets/${id}/de-escalate`);
     refresh();
+    toast.success('Escalation removed');
   }
 
   async function doMerge() {
     if (!mergeTarget) return;
-    if (!confirm(`Merge this ticket into ${mergeTarget.reference}? This ticket will be closed.`)) return;
+    const ok = await confirm({ title: 'Merge ticket', message: `Merge this ticket into ${mergeTarget.reference}? This ticket will be closed.`, confirmLabel: 'Merge', danger: true });
+    if (!ok) return;
     await api.post(`/tickets/${id}/merge`, { targetId: mergeTarget.id });
     setShowMerge(false);
     refresh();
+    toast.success(`Merged into ${mergeTarget.reference}`);
   }
 
   async function submitCsat() {
@@ -723,8 +751,8 @@ export default function TicketDetail() {
                       {m.type === 'INTERNAL_NOTE' && <span className="message-tag">Internal note</span>}
                       {(isOwn || isStaff) && editingId !== m.id && (
                         <div className="message-actions">
-                          {isOwn && <button type="button" className="btn btn-ghost btn-xs" onClick={() => startEdit(m)} title="Edit">✏️</button>}
-                          {(isOwn || isStaff) && <button type="button" className="btn btn-ghost btn-xs" onClick={() => deleteMessage(m.id)} title="Delete" style={{ color: '#dc2626' }}>🗑</button>}
+                          {isOwn && <button type="button" className="btn btn-ghost btn-xs" onClick={() => startEdit(m)} title="Edit" aria-label="Edit message">✏️</button>}
+                          {(isOwn || isStaff) && <button type="button" className="btn btn-ghost btn-xs" onClick={() => deleteMessage(m.id)} title="Delete" aria-label="Delete message" style={{ color: '#dc2626' }}>🗑</button>}
                         </div>
                       )}
                     </div>
@@ -892,14 +920,7 @@ export default function TicketDetail() {
 
         {/* ── Middle: Details ── */}
         <div className="ticket-details-col">
-          <CollapsibleCard
-            title="Details"
-            headerRight={isStaff && hasDraft ? (
-              <button className="btn btn-primary btn-xs" onClick={saveChanges} disabled={saving}>
-                {saving ? 'Saving…' : 'Save changes'}
-              </button>
-            ) : undefined}
-          >
+          <CollapsibleCard title="Details">
 
             {/* Customer Information */}
             <MetaRow label="Customer">
@@ -1175,13 +1196,6 @@ export default function TicketDetail() {
 
             <div className="divider" />
             <div style={{ fontSize: 12, color: 'var(--text-3)' }}>Created {formatDate(t.createdAt)}</div>
-
-            {/* Save button bottom */}
-            {isStaff && hasDraft && (
-              <button className="btn btn-primary btn-sm" style={{ marginTop: 12, width: '100%' }} onClick={saveChanges} disabled={saving}>
-                {saving ? 'Saving…' : '💾 Save changes'}
-              </button>
-            )}
           </CollapsibleCard>
 
           {/* System Info */}
@@ -1206,11 +1220,6 @@ export default function TicketDetail() {
                   </div>
                 );
               })}
-              {isStaff && hasDraft && (
-                <button className="btn btn-primary btn-xs" style={{ marginTop: 8, width: '100%' }} onClick={saveChanges} disabled={saving}>
-                  Save changes
-                </button>
-              )}
             </CollapsibleCard>
           )}
 
@@ -1262,11 +1271,6 @@ export default function TicketDetail() {
                     />
                     <span className="form-hint">Filled in after the issue is resolved.</span>
                   </div>
-                  {hasDraft && (
-                    <button className="btn btn-primary btn-xs" style={{ marginTop: 8 }} onClick={saveChanges} disabled={saving}>
-                      {saving ? 'Saving…' : 'Save changes'}
-                    </button>
-                  )}
                 </>
               ) : (
                 t.resolutionSummary
@@ -1303,11 +1307,6 @@ export default function TicketDetail() {
                       value={draft.preventiveAction ?? t.preventiveAction ?? ''}
                       onChange={(e) => patchDraft('preventiveAction', e.target.value)} />
                   </div>
-                  {hasDraft && (
-                    <button className="btn btn-primary btn-xs" style={{ marginTop: 8 }} onClick={saveChanges} disabled={saving}>
-                      {saving ? 'Saving…' : 'Save changes'}
-                    </button>
-                  )}
                 </>
               ) : (
                 <>
@@ -1435,6 +1434,17 @@ export default function TicketDetail() {
           </CollapsibleCard>
         </div>
       </div>
+
+      {/* Single sticky save bar — appears whenever there are unsaved edits */}
+      {isStaff && hasDraft && (
+        <div className="save-bar" role="region" aria-label="Unsaved changes">
+          <span className="save-bar-text">You have unsaved changes</span>
+          <button className="btn btn-secondary btn-sm" onClick={discardChanges} disabled={saving}>Discard</button>
+          <button className="btn btn-primary btn-sm" onClick={saveChanges} disabled={saving}>
+            {saving ? 'Saving…' : 'Save changes'}
+          </button>
+        </div>
+      )}
     </div>
   );
 }
