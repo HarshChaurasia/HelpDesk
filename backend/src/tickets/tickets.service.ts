@@ -682,7 +682,7 @@ export class TicketsService {
         assignedTo: { select: { id: true, fullName: true, email: true } },
         createdBy: { select: { id: true, fullName: true, email: true, phone: true, organization: true } },
         assignees: { include: { user: { select: { id: true, fullName: true, email: true, role: true } } } },
-        watchers: { include: { user: { select: { id: true, fullName: true } } } },
+        watchers: { include: { user: { select: { id: true, fullName: true, email: true } } } },
         attachments: { orderBy: { createdAt: 'asc' } },
         messages: {
           where: { deletedAt: null },

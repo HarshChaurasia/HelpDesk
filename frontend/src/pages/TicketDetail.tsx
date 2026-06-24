@@ -123,6 +123,7 @@ export default function TicketDetail() {
   const [body, setBody] = useState('');
   const [internal, setInternal] = useState(false);
   const [sending, setSending] = useState(false);
+  const [previewReply, setPreviewReply] = useState(false);
 
   // Edit message
   const [editingId, setEditingId] = useState<string | null>(null);
@@ -152,17 +153,6 @@ export default function TicketDetail() {
   const [contactPhone, setContactPhone] = useState('');
   const [contactOrg, setContactOrg] = useState('');
   const [savingContact, setSavingContact] = useState(false);
-
-  // CC
-  const [ccInput, setCcInput] = useState('');
-
-  // Change Request
-  const [showCR, setShowCR] = useState(false);
-  const [crTitle, setCrTitle] = useState('');
-  const [crDescription, setCrDescription] = useState('');
-  const [crImpact, setCrImpact] = useState('');
-  const [crRollback, setCrRollback] = useState('');
-  const [crScheduled, setCrScheduled] = useState('');
 
   // Escalation
   const [showEscalate, setShowEscalate] = useState(false);
@@ -195,6 +185,12 @@ export default function TicketDetail() {
   const { data: agents = [] } = useQuery<UserOption[]>({
     queryKey: ['agents'],
     queryFn: async () => (await api.get('/users/agents')).data,
+    enabled: user?.role !== 'CUSTOMER',
+  });
+
+  const { data: customerUsers = [] } = useQuery<UserOption[]>({
+    queryKey: ['customers'],
+    queryFn: async () => (await api.get('/users/customers')).data,
     enabled: user?.role !== 'CUSTOMER',
   });
 
@@ -237,7 +233,6 @@ export default function TicketDetail() {
       if (e.key !== 'Escape') return;
       setShowResolution(false);
       setShowMerge(false);
-      setShowCR(false);
       setShowEscalate(false);
     };
     window.addEventListener('keydown', onKey);
@@ -305,8 +300,22 @@ export default function TicketDetail() {
   }
 
   async function handleAssign(selected: UserOption[]) {
-    await api.post(`/tickets/${id}/assign`, { userIds: selected.map((u) => u.id) });
+    // Single assignee — keep at most one.
+    await api.post(`/tickets/${id}/assign`, { userIds: selected.slice(0, 1).map((u) => u.id) });
     refresh();
+  }
+
+  async function handleWatchers(next: UserOption[]) {
+    const current: UserOption[] = (t.watchers ?? []).map((w: any) => w.user);
+    const added = next.filter((n) => !current.some((c) => c.id === n.id));
+    const removed = current.filter((c) => !next.some((n) => n.id === c.id));
+    try {
+      for (const u of added) await api.post(`/tickets/${id}/watchers`, { userId: u.id });
+      for (const u of removed) await api.delete(`/tickets/${id}/watchers/${u.id}`);
+      refresh();
+    } catch (e: any) {
+      toast.error(e.response?.data?.error?.message ?? 'Could not update watchers');
+    }
   }
 
   async function startEdit(m: any) { setEditingId(m.id); setEditBody(m.body); }
@@ -347,38 +356,7 @@ export default function TicketDetail() {
     setEditingContact(true);
   }
 
-  async function addCC() {
-    if (!ccInput.trim()) return;
-    await api.post(`/tickets/${id}/cc`, { email: ccInput.trim() });
-    setCcInput('');
-    refresh();
-  }
 
-  function openCR() {
-    if (t.changeRequest) {
-      setCrTitle(t.changeRequest.title ?? '');
-      setCrDescription(t.changeRequest.description ?? '');
-      setCrImpact(t.changeRequest.impact ?? '');
-      setCrRollback(t.changeRequest.rollbackPlan ?? '');
-      setCrScheduled(t.changeRequest.scheduledAt ? new Date(t.changeRequest.scheduledAt).toISOString().slice(0, 16) : '');
-    } else {
-      setCrTitle(t.subject);
-    }
-    setShowCR(true);
-  }
-
-  async function submitCR() {
-    if (!crTitle.trim()) return;
-    await api.post(`/tickets/${id}/change-request`, {
-      title: crTitle.trim(),
-      description: crDescription || undefined,
-      impact: crImpact || undefined,
-      rollbackPlan: crRollback || undefined,
-      scheduledAt: crScheduled || undefined,
-    });
-    setShowCR(false);
-    refresh();
-  }
 
   async function doEscalate() {
     if (!escalateReason.trim()) return;
@@ -416,10 +394,6 @@ export default function TicketDetail() {
     } finally { setCsatSubmitting(false); }
   }
 
-  async function removeCC(email: string) {
-    await api.delete(`/tickets/${id}/cc/${encodeURIComponent(email)}`);
-    refresh();
-  }
 
   async function downloadPdf() {
     const res = await api.get(`/tickets/${id}/pdf`, { responseType: 'blob' });
@@ -486,11 +460,6 @@ export default function TicketDetail() {
               🔺 Escalated L{t.escalation.level}
             </span>
           )}
-          {t.changeRequest && (
-            <span className="badge" style={{ background: '#ede9fe', color: '#6d28d9' }}>
-              CR: {t.changeRequest.status}
-            </span>
-          )}
           {t.noAutoClose && <span className="badge" style={{ background: '#f3f4f6', color: '#6b7280' }}>No Auto-Close</span>}
         </div>
         <div className="ticket-subject">{t.subject}</div>
@@ -520,9 +489,6 @@ export default function TicketDetail() {
             {t.status !== 'CLOSED' && (
               <button type="button" className="btn btn-secondary btn-xs" onClick={() => setShowMerge(true)}>⇄ Merge into…</button>
             )}
-            <button type="button" className="btn btn-secondary btn-xs" onClick={openCR}>
-              {t.changeRequest ? '✏️ Edit CR' : '→ Change Request'}
-            </button>
             {!t.escalation?.resolvedAt && !t.escalation ? (
               <button type="button" className="btn btn-secondary btn-xs" style={{ color: '#b45309' }} onClick={() => setShowEscalate(true)}>🔺 Escalate</button>
             ) : t.escalation && !t.escalation.resolvedAt ? (
@@ -630,48 +596,6 @@ export default function TicketDetail() {
               <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
                 <button className="btn btn-secondary btn-sm" onClick={() => setShowMerge(false)}>Cancel</button>
                 <button className="btn btn-primary btn-sm" disabled={!mergeTarget} onClick={doMerge}>Merge</button>
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* Change Request modal */}
-      {showCR && (
-        <div className="preview-overlay" onClick={() => setShowCR(false)}>
-          <div className="preview-modal" style={{ maxWidth: 540 }} onClick={(e) => e.stopPropagation()}>
-            <div className="preview-modal-header">
-              <span style={{ fontSize: 14, fontWeight: 600 }}>{t.changeRequest ? 'Edit Change Request' : 'Convert to Change Request'}</span>
-              <button className="btn btn-ghost btn-xs" onClick={() => setShowCR(false)}>✕</button>
-            </div>
-            <div style={{ padding: '16px 20px', display: 'flex', flexDirection: 'column', gap: 12 }}>
-              <div className="form-group" style={{ marginBottom: 0 }}>
-                <label className="form-label">Title <span style={{ color: '#ef4444' }}>*</span></label>
-                <input type="text" value={crTitle} onChange={(e) => setCrTitle(e.target.value)} placeholder="Change request title…" style={{ fontSize: 13 }} />
-              </div>
-              <div className="form-group" style={{ marginBottom: 0 }}>
-                <label className="form-label">Description</label>
-                <textarea rows={2} value={crDescription} onChange={(e) => setCrDescription(e.target.value)} placeholder="What change is being made?" />
-              </div>
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
-                <div className="form-group" style={{ marginBottom: 0 }}>
-                  <label className="form-label">Impact</label>
-                  <textarea rows={2} value={crImpact} onChange={(e) => setCrImpact(e.target.value)} placeholder="Who / what is affected?" />
-                </div>
-                <div className="form-group" style={{ marginBottom: 0 }}>
-                  <label className="form-label">Rollback Plan</label>
-                  <textarea rows={2} value={crRollback} onChange={(e) => setCrRollback(e.target.value)} placeholder="How to revert if needed?" />
-                </div>
-              </div>
-              <div className="form-group" style={{ marginBottom: 0 }}>
-                <label className="form-label">Scheduled Date</label>
-                <input type="datetime-local" value={crScheduled} onChange={(e) => setCrScheduled(e.target.value)} style={{ fontSize: 13 }} />
-              </div>
-              <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
-                <button className="btn btn-secondary btn-sm" onClick={() => setShowCR(false)}>Cancel</button>
-                <button className="btn btn-primary btn-sm" disabled={!crTitle.trim()} onClick={submitCR}>
-                  {t.changeRequest ? 'Update' : 'Create Change Request'}
-                </button>
               </div>
             </div>
           </div>
@@ -786,18 +710,34 @@ export default function TicketDetail() {
             )}
             <form onSubmit={sendMessage}>
               <div className="compose-body" style={{ background: internal ? '#fffbeb' : undefined }}>
-                <RichTextEditor
-                  value={body}
-                  onChange={setBody}
-                  placeholder={internal ? 'Add an internal note (hidden from customer)…' : 'Write a reply…'}
-                  mentionUsers={agents}
-                  minHeight={100}
-                />
+                {previewReply ? (
+                  <div
+                    className="message-body rte-render"
+                    style={{ minHeight: 100, padding: '8px 10px' }}
+                    dangerouslySetInnerHTML={safeHtml(body && body !== '<p></p>' ? body : '<p style="color:var(--text-3)">Nothing to preview yet.</p>')}
+                  />
+                ) : (
+                  <RichTextEditor
+                    value={body}
+                    onChange={setBody}
+                    placeholder={internal ? 'Add an internal note (hidden from customer)…' : 'Write a reply…'}
+                    mentionUsers={agents}
+                    minHeight={100}
+                  />
+                )}
               </div>
-              <div className="compose-footer">
+              <div className="compose-footer" style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
                 <button className="btn btn-primary btn-sm" type="submit" disabled={sending || !body.trim() || body === '<p></p>'}>
                   {sending && <span className="spinner" style={{ width: 12, height: 12 }} />}
                   {internal ? 'Add note' : 'Send reply'}
+                </button>
+                <button
+                  type="button"
+                  className="btn btn-secondary btn-sm"
+                  onClick={() => setPreviewReply((p) => !p)}
+                  disabled={!body.trim() || body === '<p></p>'}
+                >
+                  {previewReply ? '✎ Edit' : '👁 Preview'}
                 </button>
               </div>
             </form>
@@ -985,47 +925,31 @@ export default function TicketDetail() {
               ) : '—'}
             </MetaRow>
 
-            {/* CC Recipients */}
+            {/* Watchers (system users) */}
             {isStaff && (
-              <MetaRow label="CC">
-                <div>
-                  {(t.ccRecipients ?? []).length > 0 && (
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: 3, marginBottom: 6 }}>
-                      {(t.ccRecipients ?? []).map((cc: any) => (
-                        <div key={cc.id} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', fontSize: 12 }}>
-                          <span style={{ color: 'var(--text-2)' }}>{cc.email}</span>
-                          <button type="button" className="btn btn-ghost btn-xs" style={{ color: '#dc2626', padding: '0 4px' }} onClick={() => removeCC(cc.email)}>✕</button>
-                        </div>
-                      ))}
-                    </div>
-                  )}
-                  <div style={{ display: 'flex', gap: 4 }}>
-                    <input
-                      type="email"
-                      placeholder="Add email…"
-                      value={ccInput}
-                      onChange={(e) => setCcInput(e.target.value)}
-                      onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); addCC(); } }}
-                      style={{ fontSize: 12, padding: '4px 8px', flex: 1 }}
-                    />
-                    <button type="button" className="btn btn-secondary btn-xs" onClick={addCC}>Add</button>
-                  </div>
-                </div>
+              <MetaRow label="Watchers">
+                <UserCombobox
+                  users={[...agents, ...customerUsers]}
+                  selected={(t.watchers ?? []).map((w: any) => w.user)}
+                  onChange={handleWatchers}
+                  placeholder="Add watchers…"
+                  multi
+                />
               </MetaRow>
             )}
 
-            {/* Assignees */}
-            <MetaRow label="Assignees">
+            {/* Assignee (single) */}
+            <MetaRow label="Assignee">
               {isStaff ? (
-                <UserCombobox users={agents} selected={currentAssignees} onChange={handleAssign} placeholder="Search agents…" multi />
+                <UserCombobox users={agents} selected={currentAssignees.slice(0, 1)} onChange={handleAssign} placeholder="Assign an agent…" multi={false} />
               ) : (
                 currentAssignees.length === 0
                   ? <span className="muted">Unassigned</span>
-                  : currentAssignees.map((a) => (
-                    <div key={a.id} className="user-cell" style={{ marginBottom: 3 }}>
-                      <Avatar name={a.fullName} size="md" />{a.fullName}
+                  : (
+                    <div className="user-cell" style={{ marginBottom: 3 }}>
+                      <Avatar name={currentAssignees[0].fullName} size="md" />{currentAssignees[0].fullName}
                     </div>
-                  ))
+                  )
               )}
             </MetaRow>
 
@@ -1240,22 +1164,6 @@ export default function TicketDetail() {
             </div>
           )}
 
-          {/* Change Request */}
-          {isStaff && t.changeRequest && (
-            <div className="card" style={{ marginTop: 12 }}>
-              <div className="card-header">
-                <span className="card-title">Change Request</span>
-                <span className={`badge`} style={{ background: '#ede9fe', color: '#6d28d9', fontSize: 11 }}>{t.changeRequest.status}</span>
-              </div>
-              <div style={{ fontSize: 13, fontWeight: 500, marginBottom: 6 }}>{t.changeRequest.title}</div>
-              {t.changeRequest.description && <div style={{ fontSize: 12.5, color: 'var(--text-2)', marginBottom: 4 }}>{t.changeRequest.description}</div>}
-              {t.changeRequest.impact && <MetaRow label="Impact"><div style={{ fontSize: 12.5 }}>{t.changeRequest.impact}</div></MetaRow>}
-              {t.changeRequest.rollbackPlan && <MetaRow label="Rollback"><div style={{ fontSize: 12.5 }}>{t.changeRequest.rollbackPlan}</div></MetaRow>}
-              {t.changeRequest.scheduledAt && <MetaRow label="Scheduled"><div style={{ fontSize: 12.5 }}>{formatDate(t.changeRequest.scheduledAt)}</div></MetaRow>}
-              <button className="btn btn-ghost btn-xs" style={{ marginTop: 6 }} onClick={openCR}>Edit</button>
-            </div>
-          )}
-
           {/* Resolution */}
           {(isStaff || t.resolutionSummary) && (
             <CollapsibleCard title="Resolution" defaultOpen={!!t.resolutionSummary} style={{ marginTop: 12 }}>
@@ -1315,6 +1223,22 @@ export default function TicketDetail() {
                   {t.preventiveAction && <MetaRow label="Preventive Action"><div style={{ fontSize: 13, whiteSpace: 'pre-wrap' }}>{t.preventiveAction}</div></MetaRow>}
                   {!t.rootCause && !t.correctiveAction && !t.preventiveAction && <div className="muted" style={{ fontSize: 12 }}>No analysis recorded.</div>}
                 </>
+              )}
+            </CollapsibleCard>
+          )}
+
+          {/* Escalation details */}
+          {isStaff && t.escalation && (
+            <CollapsibleCard title="Escalation Details" defaultOpen={!t.escalation.resolvedAt} style={{ marginTop: 12 }}>
+              <MetaRow label="Level">
+                <span className="badge" style={{ background: '#fef3c7', color: '#b45309' }}>L{t.escalation.level}</span>
+                {t.escalation.resolvedAt && <span className="muted" style={{ marginLeft: 6, fontSize: 12 }}>(resolved)</span>}
+              </MetaRow>
+              <MetaRow label="Reason"><div style={{ fontSize: 13, whiteSpace: 'pre-wrap' }}>{t.escalation.reason}</div></MetaRow>
+              <MetaRow label="Escalated by"><span style={{ fontSize: 13 }}>{t.escalation.escalatedBy?.fullName ?? '—'}</span></MetaRow>
+              <MetaRow label="Escalated at"><span style={{ fontSize: 13 }}>{formatDate(t.escalation.createdAt)}</span></MetaRow>
+              {t.escalation.resolvedAt && (
+                <MetaRow label="De-escalated at"><span style={{ fontSize: 13 }}>{formatDate(t.escalation.resolvedAt)}</span></MetaRow>
               )}
             </CollapsibleCard>
           )}

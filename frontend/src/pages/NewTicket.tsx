@@ -133,17 +133,37 @@ export default function NewTicket() {
             />
           </div>
 
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0 16px' }}>
-            <div className="form-group">
-              <label className="form-label">Category</label>
-              <select value={categoryId} onChange={(e) => { setCategoryId(e.target.value); setSubcategoryId(''); }}>
-                <option value="">— Select category —</option>
-                {categories?.map((c: any) => (
-                  <option key={c.id} value={c.id}>{c.name}</option>
-                ))}
-              </select>
-            </div>
+          {(() => {
+            const cat = categories?.find((c: any) => c.id === categoryId);
+            const subs: any[] = cat?.subcategories ?? [];
+            return (
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0 16px' }}>
+                <div className="form-group">
+                  <label className="form-label">Category</label>
+                  <select value={categoryId} onChange={(e) => { setCategoryId(e.target.value); setSubcategoryId(''); }}>
+                    <option value="">— Select category —</option>
+                    {categories?.map((c: any) => (
+                      <option key={c.id} value={c.id}>{c.name}</option>
+                    ))}
+                  </select>
+                </div>
 
+                <div className="form-group">
+                  <label className="form-label">Subcategory</label>
+                  <select
+                    value={subcategoryId}
+                    onChange={(e) => setSubcategoryId(e.target.value)}
+                    disabled={!categoryId || subs.length === 0}
+                  >
+                    <option value="">{!categoryId ? '— Select a category first —' : subs.length === 0 ? '— None available —' : '— Select subcategory —'}</option>
+                    {subs.map((s: any) => <option key={s.id} value={s.id}>{s.name}</option>)}
+                  </select>
+                </div>
+              </div>
+            );
+          })()}
+
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0 16px' }}>
             <div className="form-group">
               <label className="form-label">Priority</label>
               <select value={priority} onChange={(e) => setPriority(e.target.value)}>
@@ -152,24 +172,7 @@ export default function NewTicket() {
                 ))}
               </select>
             </div>
-          </div>
 
-          {(() => {
-            const cat = categories?.find((c: any) => c.id === categoryId);
-            const subs: any[] = cat?.subcategories ?? [];
-            if (!categoryId || subs.length === 0) return null;
-            return (
-              <div className="form-group">
-                <label className="form-label">Subcategory</label>
-                <select value={subcategoryId} onChange={(e) => setSubcategoryId(e.target.value)}>
-                  <option value="">— Select subcategory —</option>
-                  {subs.map((s: any) => <option key={s.id} value={s.id}>{s.name}</option>)}
-                </select>
-              </div>
-            );
-          })()}
-
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0 16px' }}>
             <div className="form-group">
               <label className="form-label">Delivery / Due Date</label>
               <input
@@ -179,19 +182,19 @@ export default function NewTicket() {
               />
               <span className="form-hint">When this request is expected to be delivered.</span>
             </div>
+          </div>
 
-            <div className="form-group">
-              <label className="form-label">Estimated Effort (hours)</label>
-              <input
-                type="number"
-                min="0"
-                step="0.5"
-                placeholder="e.g. 6"
-                value={estimatedEffort}
-                onChange={(e) => setEstimatedEffort(e.target.value)}
-              />
-              <span className="form-hint">Rough estimate of work required.</span>
-            </div>
+          <div className="form-group" style={{ maxWidth: 'calc(50% - 8px)' }}>
+            <label className="form-label">Estimated Effort (hours)</label>
+            <input
+              type="number"
+              min="0"
+              step="0.5"
+              placeholder="e.g. 6"
+              value={estimatedEffort}
+              onChange={(e) => setEstimatedEffort(e.target.value)}
+            />
+            <span className="form-hint">Rough estimate of work required.</span>
           </div>
 
           {/* System details (collapsible — optional) */}
