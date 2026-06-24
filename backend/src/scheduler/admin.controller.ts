@@ -1,6 +1,6 @@
-import { Body, Controller, Get, Patch, Post } from '@nestjs/common';
+import { Body, Controller, Get, Patch, Post, Put } from '@nestjs/common';
 import { ApiTags, ApiBearerAuth } from '@nestjs/swagger';
-import { IsBoolean, IsInt, IsOptional, IsString, Min } from 'class-validator';
+import { IsArray, IsBoolean, IsInt, IsOptional, IsString, Min } from 'class-validator';
 import { Type } from 'class-transformer';
 import { Roles, CurrentUser, AuthUser } from '../common/decorators';
 import { ImapIngestService } from '../mail/imap-ingest.service';
@@ -27,6 +27,25 @@ const ENV_KEY: Record<string, string> = {
 };
 
 const MASKED_FIELDS = new Set(['imapPass', 'smtpPass']);
+
+// Configurable option lists, stored as JSON in the Setting table (no migration).
+// Readable by staff (for dropdowns), editable by admins.
+const CONFIG_DEFAULTS: Record<string, string[]> = {
+  resolutionOptions: [
+    'Fixed',
+    'Workaround Provided',
+    'Configuration Change',
+    'No Fault Found',
+    'Duplicate',
+    "Won't Fix",
+    'User Error',
+    'Resolved by Customer',
+  ],
+};
+
+class ConfigDto {
+  @IsOptional() @IsArray() @IsString({ each: true }) resolutionOptions?: string[];
+}
 
 class UpdateSettingsDto {
   @IsOptional() @IsInt() @Min(1) @Type(() => Number) autoCloseDays?: number;
@@ -131,6 +150,46 @@ export class AdminController {
     }
 
     return this.readAll();
+  }
+
+  // ── Configurable option lists (resolution, etc.) ──
+
+  @Roles('ADMIN', 'AGENT')
+  @Get('config')
+  async getConfig() {
+    const keys = Object.keys(CONFIG_DEFAULTS);
+    let rows: { key: string; value: string }[] = [];
+    try {
+      rows = await this.prisma.setting.findMany({ where: { key: { in: keys } } });
+    } catch {
+      // Setting table unavailable — fall back to defaults.
+    }
+    const out: Record<string, string[]> = {};
+    for (const k of keys) {
+      out[k] = CONFIG_DEFAULTS[k];
+      const row = rows.find((r) => r.key === k);
+      if (row) {
+        try {
+          const parsed = JSON.parse(row.value);
+          if (Array.isArray(parsed)) out[k] = parsed.filter((v) => typeof v === 'string');
+        } catch {
+          /* keep default */
+        }
+      }
+    }
+    return out;
+  }
+
+  @Roles('ADMIN')
+  @Put('config')
+  async setConfig(@Body() dto: ConfigDto) {
+    const entries: [string, string[]][] = [];
+    if (dto.resolutionOptions) entries.push(['resolutionOptions', dto.resolutionOptions]);
+    for (const [key, arr] of entries) {
+      const value = JSON.stringify(arr.map((s) => s.trim()).filter(Boolean));
+      await this.prisma.setting.upsert({ where: { key }, update: { value }, create: { key, value } });
+    }
+    return this.getConfig();
   }
 
   @Roles('ADMIN')

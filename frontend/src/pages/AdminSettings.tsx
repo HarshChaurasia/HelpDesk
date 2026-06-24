@@ -3,7 +3,7 @@ import { useState } from 'react';
 import { api } from '../api';
 
 /* ─── helpers ─── */
-type Tab = 'email' | 'sla' | 'categories' | 'system';
+type Tab = 'email' | 'sla' | 'categories' | 'dropdowns' | 'system';
 
 function SectionTitle({ children }: { children: React.ReactNode }) {
   return (
@@ -572,12 +572,90 @@ function SystemSettings() {
 }
 
 /* ═══════════════════════════════════════
+   DROPDOWNS TAB — configurable option lists
+═══════════════════════════════════════ */
+function OptionListEditor({ title, hint, options, onChange }: {
+  title: string; hint: string; options: string[]; onChange: (next: string[]) => void;
+}) {
+  const [input, setInput] = useState('');
+  function add() {
+    const v = input.trim();
+    if (!v || options.includes(v)) { setInput(''); return; }
+    onChange([...options, v]);
+    setInput('');
+  }
+  return (
+    <div className="card" style={{ marginBottom: 16 }}>
+      <div className="card-header"><span className="card-title">{title}</span></div>
+      <p style={{ fontSize: 12.5, color: 'var(--text-2)', marginTop: 0 }}>{hint}</p>
+      <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginBottom: 10 }}>
+        {options.length === 0 && <span className="muted" style={{ fontSize: 12 }}>No options yet.</span>}
+        {options.map((o) => (
+          <span key={o} className="tag-chip" style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}>
+            {o}
+            <button type="button" aria-label={`Remove ${o}`} onClick={() => onChange(options.filter((x) => x !== o))}
+              style={{ border: 'none', background: 'none', cursor: 'pointer', color: '#dc2626', fontSize: 13, lineHeight: 1 }}>×</button>
+          </span>
+        ))}
+      </div>
+      <div style={{ display: 'flex', gap: 6, maxWidth: 360 }}>
+        <input value={input} onChange={(e) => setInput(e.target.value)}
+          onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); add(); } }}
+          placeholder="Add option…" style={{ fontSize: 13, padding: '5px 8px', flex: 1, marginBottom: 0 }} />
+        <button type="button" className="btn btn-secondary btn-sm" onClick={add}>Add</button>
+      </div>
+    </div>
+  );
+}
+
+function DropdownSettings() {
+  const qc = useQueryClient();
+  const [saved, setSaved] = useState(false);
+  const { data, isLoading } = useQuery<{ resolutionOptions: string[] }>({
+    queryKey: ['admin-config'],
+    queryFn: async () => (await api.get('/admin/config')).data,
+  });
+  const [resolutionOptions, setResolutionOptions] = useState<string[] | null>(null);
+  const current = resolutionOptions ?? data?.resolutionOptions ?? [];
+
+  const save = useMutation({
+    mutationFn: () => api.put('/admin/config', { resolutionOptions: current }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['admin-config'] });
+      setSaved(true);
+      setTimeout(() => setSaved(false), 2500);
+    },
+  });
+
+  if (isLoading) return <div style={{ padding: 32, textAlign: 'center', color: 'var(--text-3)' }}><span className="spinner" /></div>;
+
+  return (
+    <div>
+      <p style={{ fontSize: 13, color: 'var(--text-2)' }}>Manage the option lists that appear as dropdowns on tickets.</p>
+      <OptionListEditor
+        title="Resolution"
+        hint="Shown as the Resolution dropdown on the ticket detail page."
+        options={current}
+        onChange={setResolutionOptions}
+      />
+      <div style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
+        <button className="btn btn-primary btn-sm" onClick={() => save.mutate()} disabled={save.isPending}>
+          {save.isPending ? 'Saving…' : 'Save changes'}
+        </button>
+        {saved && <span style={{ color: '#16a34a', fontSize: 13 }}>✓ Saved</span>}
+      </div>
+    </div>
+  );
+}
+
+/* ═══════════════════════════════════════
    ROOT PAGE
 ═══════════════════════════════════════ */
 const TABS: { key: Tab; label: string }[] = [
   { key: 'email',      label: 'Email' },
   { key: 'sla',        label: 'SLA Policies' },
   { key: 'categories', label: 'Categories' },
+  { key: 'dropdowns',  label: 'Dropdowns' },
   { key: 'system',     label: 'System' },
 ];
 
@@ -608,6 +686,7 @@ export default function AdminSettings() {
       {tab === 'email'      && <EmailSettings />}
       {tab === 'sla'        && <SlaSettings />}
       {tab === 'categories' && <CategorySettings />}
+      {tab === 'dropdowns'  && <DropdownSettings />}
       {tab === 'system'     && <SystemSettings />}
     </div>
   );

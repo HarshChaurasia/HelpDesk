@@ -206,6 +206,13 @@ export default function TicketDetail() {
     enabled: user?.role !== 'CUSTOMER',
   });
 
+  const { data: optionConfig } = useQuery<{ resolutionOptions: string[] }>({
+    queryKey: ['admin-config'],
+    queryFn: async () => (await api.get('/admin/config')).data,
+    enabled: user?.role !== 'CUSTOMER',
+  });
+  const resolutionOptions = optionConfig?.resolutionOptions ?? [];
+
   const { data: mergeResults } = useQuery({
     queryKey: ['tickets-merge-search', mergeSearch],
     queryFn: async () => {
@@ -1170,14 +1177,25 @@ export default function TicketDetail() {
               {isStaff ? (
                 <>
                   <div className="form-group" style={{ marginBottom: 0 }}>
-                    <label className="form-label">Resolution Summary</label>
-                    <textarea
-                      rows={3}
-                      placeholder="What was done to resolve this ticket…"
-                      value={draft.resolutionSummary ?? t.resolutionSummary ?? ''}
-                      onChange={(e) => patchDraft('resolutionSummary', e.target.value)}
-                    />
-                    <span className="form-hint">Filled in after the issue is resolved.</span>
+                    <label className="form-label">Resolution</label>
+                    {(() => {
+                      const current = draft.resolutionSummary ?? t.resolutionSummary ?? '';
+                      // Include any legacy/free-text value so it isn't lost from the dropdown.
+                      const opts = current && !resolutionOptions.includes(current)
+                        ? [current, ...resolutionOptions]
+                        : resolutionOptions;
+                      return (
+                        <select
+                          value={current}
+                          onChange={(e) => patchDraft('resolutionSummary', e.target.value)}
+                          style={{ fontSize: 13 }}
+                        >
+                          <option value="">— Select resolution —</option>
+                          {opts.map((o) => <option key={o} value={o}>{o}</option>)}
+                        </select>
+                      );
+                    })()}
+                    <span className="form-hint">Configurable in Settings → Dropdowns.</span>
                   </div>
                 </>
               ) : (
