@@ -302,6 +302,16 @@ export class TicketsController {
   }
 
   @Roles('AGENT', 'ADMIN')
+  @Delete(':id/timelogs/:logId')
+  deleteTimeLog(
+    @Param('id') id: string,
+    @Param('logId') logId: string,
+    @CurrentUser() user: AuthUser,
+  ) {
+    return this.tickets.deleteTimeLog(id, logId, user);
+  }
+
+  @Roles('AGENT', 'ADMIN')
   @Post('bulk')
   bulkAction(
     @Body() dto: BulkActionDto,

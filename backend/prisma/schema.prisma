@@ -63,6 +63,8 @@ enum EventType {
   CLOSED
   TIME_LOGGED
   DELIVERY_DATE_SET
+  ESCALATED
+  DE_ESCALATED
 }
 
 enum TimeLogType {

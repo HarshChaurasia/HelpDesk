@@ -11,8 +11,9 @@ const MASK = '***';
 
 // Maps DTO field names → process.env key names
 const ENV_KEY: Record<string, string> = {
-  autoCloseDays: 'AUTO_CLOSE_DAYS',
-  imapEnabled:   'IMAP_ENABLED',
+  autoCloseDays:    'AUTO_CLOSE_DAYS',
+  autoCloseEnabled: 'AUTO_CLOSE_ENABLED',
+  imapEnabled:      'IMAP_ENABLED',
   imapHost:      'IMAP_HOST',
   imapPort:      'IMAP_PORT',
   imapSecure:    'IMAP_SECURE',
@@ -41,14 +42,42 @@ const CONFIG_DEFAULTS: Record<string, string[]> = {
     'User Error',
     'Resolved by Customer',
   ],
+  rootCauseOptions: [
+    'Human Error',
+    'Software Bug',
+    'Configuration Issue',
+    'Hardware Failure',
+    'Network Issue',
+    'Third-party Dependency',
+    'Process Gap',
+    'Unknown',
+  ],
+  tagOptions: [
+    'bug',
+    'feature-request',
+    'urgent',
+    'billing',
+    'security',
+    'performance',
+    'documentation',
+  ],
+  priorityOptions: ['LOW', 'MEDIUM', 'HIGH', 'URGENT'],
+  timeLogTypes: ['INVESTIGATION', 'DEVELOPMENT', 'TESTING', 'MEETING', 'OTHER'],
+  escalationContacts: [],
 };
 
 class ConfigDto {
   @IsOptional() @IsArray() @IsString({ each: true }) resolutionOptions?: string[];
+  @IsOptional() @IsArray() @IsString({ each: true }) rootCauseOptions?: string[];
+  @IsOptional() @IsArray() @IsString({ each: true }) tagOptions?: string[];
+  @IsOptional() @IsArray() @IsString({ each: true }) priorityOptions?: string[];
+  @IsOptional() @IsArray() @IsString({ each: true }) timeLogTypes?: string[];
+  @IsOptional() @IsArray() @IsString({ each: true }) escalationContacts?: string[];
 }
 
 class UpdateSettingsDto {
   @IsOptional() @IsInt() @Min(1) @Type(() => Number) autoCloseDays?: number;
+  @IsOptional() @IsBoolean() @Type(() => Boolean) autoCloseEnabled?: boolean;
   @IsOptional() @IsBoolean() @Type(() => Boolean) imapEnabled?: boolean;
   @IsOptional() @IsString() imapHost?: string;
   @IsOptional() @IsInt() @Min(1) @Type(() => Number) imapPort?: number;
@@ -93,7 +122,8 @@ export class AdminController {
   private readAll() {
     // Always read live from process.env — updated at runtime by PATCH
     return {
-      autoCloseDays: parseInt(process.env.AUTO_CLOSE_DAYS ?? '5', 10),
+      autoCloseDays:    parseInt(process.env.AUTO_CLOSE_DAYS ?? '5', 10),
+      autoCloseEnabled: process.env.AUTO_CLOSE_ENABLED !== 'false',
       imapEnabled:   process.env.IMAP_ENABLED   === 'true',
       imapHost:      process.env.IMAP_HOST      ?? '',
       imapPort:      parseInt(process.env.IMAP_PORT ?? '993', 10),
@@ -183,11 +213,15 @@ export class AdminController {
   @Roles('ADMIN')
   @Put('config')
   async setConfig(@Body() dto: ConfigDto) {
-    const entries: [string, string[]][] = [];
-    if (dto.resolutionOptions) entries.push(['resolutionOptions', dto.resolutionOptions]);
-    for (const [key, arr] of entries) {
+    const fields: (keyof ConfigDto)[] = [
+      'resolutionOptions', 'rootCauseOptions', 'tagOptions',
+      'priorityOptions', 'timeLogTypes', 'escalationContacts',
+    ];
+    for (const field of fields) {
+      const arr = dto[field];
+      if (!arr) continue;
       const value = JSON.stringify(arr.map((s) => s.trim()).filter(Boolean));
-      await this.prisma.setting.upsert({ where: { key }, update: { value }, create: { key, value } });
+      await this.prisma.setting.upsert({ where: { key: field }, update: { value }, create: { key: field, value } });
     }
     return this.getConfig();
   }

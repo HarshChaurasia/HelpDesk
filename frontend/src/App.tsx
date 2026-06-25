@@ -8,6 +8,7 @@ import AdminUsers from './pages/AdminUsers';
 import AdminSettings from './pages/AdminSettings';
 import Reports from './pages/Reports';
 import Sla from './pages/Sla';
+import Escalations from './pages/Escalations';
 import NotificationBell from './components/NotificationBell';
 import { ReactNode, useEffect, useState } from 'react';
 import { avatarInitials, avatarStyle } from './utils';
@@ -84,6 +85,13 @@ function IconLogout() {
     </svg>
   );
 }
+function IconEscalate() {
+  return (
+    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <path d="m12 19-7-7 7-7"/><path d="M19 12H5"/>
+    </svg>
+  );
+}
 function IconSettings() {
   return (
     <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
@@ -140,6 +148,7 @@ function Layout({ children }: { children: ReactNode }) {
               <div className="sidebar-section">Analytics</div>
               <NavItem to="/sla" icon={<IconSla />} label="SLA Dashboard" />
               <NavItem to="/reports" icon={<IconChart />} label="Reports" />
+              <NavItem to="/escalations" icon={<IconEscalate />} label="Escalations" />
             </>
           )}
 
@@ -201,6 +210,7 @@ export default function App() {
       <Route path="/admin/settings" element={<Protected><AdminSettings /></Protected>} />
       <Route path="/sla" element={<Protected><Sla /></Protected>} />
       <Route path="/reports" element={<Protected><Reports /></Protected>} />
+      <Route path="/escalations" element={<Protected><Escalations /></Protected>} />
       <Route path="*" element={<Navigate to="/tickets" replace />} />
     </Routes>
   );

@@ -10,9 +10,9 @@ import RichTextEditor from '../components/RichTextEditor';
 import UserCombobox, { UserOption } from '../components/UserCombobox';
 import AttachmentPanel from '../components/AttachmentPanel';
 
-const PRIORITIES = ['LOW', 'MEDIUM', 'HIGH', 'URGENT'] as const;
+const DEFAULT_PRIORITIES = ['LOW', 'MEDIUM', 'HIGH', 'URGENT'];
+const DEFAULT_TIME_LOG_TYPES = ['INVESTIGATION', 'DEVELOPMENT', 'TESTING', 'OTHER'];
 const EMOJI_PICKER = ['👍', '👎', '❤️', '😂', '🎉', '🤔', '👀', '🙏'];
-const TIME_LOG_TYPES = ['INVESTIGATION', 'DEVELOPMENT', 'TESTING', 'OTHER'] as const;
 
 function Avatar({ name, size = 'sm' }: { name: string; size?: 'sm' | 'md' }) {
   return (
@@ -140,7 +140,7 @@ export default function TicketDetail() {
 
   // Time log form
   const [showTimeLog, setShowTimeLog] = useState(false);
-  const [timeType, setTimeType] = useState<typeof TIME_LOG_TYPES[number]>('INVESTIGATION');
+  const [timeType, setTimeType] = useState('INVESTIGATION');
   const [timeHours, setTimeHours] = useState('');
   const [timeBillable, setTimeBillable] = useState(true);
   const [timeNote, setTimeNote] = useState('');
@@ -206,12 +206,23 @@ export default function TicketDetail() {
     enabled: user?.role !== 'CUSTOMER',
   });
 
-  const { data: optionConfig } = useQuery<{ resolutionOptions: string[] }>({
+  const { data: optionConfig } = useQuery<{
+    resolutionOptions: string[];
+    rootCauseOptions: string[];
+    tagOptions: string[];
+    priorityOptions: string[];
+    timeLogTypes: string[];
+    escalationContacts: string[];
+  }>({
     queryKey: ['admin-config'],
     queryFn: async () => (await api.get('/admin/config')).data,
     enabled: user?.role !== 'CUSTOMER',
   });
   const resolutionOptions = optionConfig?.resolutionOptions ?? [];
+  const rootCauseOptions = optionConfig?.rootCauseOptions ?? [];
+  const configuredPriorities = optionConfig?.priorityOptions?.length ? optionConfig.priorityOptions : DEFAULT_PRIORITIES;
+  const configuredTimeLogTypes = optionConfig?.timeLogTypes?.length ? optionConfig.timeLogTypes : DEFAULT_TIME_LOG_TYPES;
+  const configuredTagOptions = optionConfig?.tagOptions ?? [];
 
   const { data: mergeResults } = useQuery({
     queryKey: ['tickets-merge-search', mergeSearch],
@@ -529,9 +540,20 @@ export default function TicketDetail() {
               </div>
               <div className="form-group" style={{ marginBottom: 0 }}>
                 <label className="form-label">Root Cause</label>
-                <textarea rows={2} placeholder="What caused this issue?"
-                  value={draft.rootCause ?? t.rootCause ?? ''}
-                  onChange={(e) => patchDraft('rootCause', e.target.value)} />
+                {rootCauseOptions.length > 0 ? (() => {
+                  const cur = draft.rootCause ?? t.rootCause ?? '';
+                  const opts = cur && !rootCauseOptions.includes(cur) ? [cur, ...rootCauseOptions] : rootCauseOptions;
+                  return (
+                    <select value={cur} onChange={(e) => patchDraft('rootCause', e.target.value)} style={{ fontSize: 13 }}>
+                      <option value="">— Select root cause —</option>
+                      {opts.map((o) => <option key={o} value={o}>{o}</option>)}
+                    </select>
+                  );
+                })() : (
+                  <textarea rows={2} placeholder="What caused this issue?"
+                    value={draft.rootCause ?? t.rootCause ?? ''}
+                    onChange={(e) => patchDraft('rootCause', e.target.value)} />
+                )}
               </div>
               <div className="form-group" style={{ marginBottom: 0 }}>
                 <label className="form-label">Corrective Action</label>
@@ -814,8 +836,8 @@ export default function TicketDetail() {
                 <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, marginBottom: 12 }}>
                   <div className="form-group" style={{ marginBottom: 0 }}>
                     <label className="form-label">Type</label>
-                    <select value={timeType} onChange={(e) => setTimeType(e.target.value as any)}>
-                      {TIME_LOG_TYPES.map((t) => <option key={t} value={t}>{t.charAt(0) + t.slice(1).toLowerCase()}</option>)}
+                    <select value={timeType} onChange={(e) => setTimeType(e.target.value)}>
+                      {configuredTimeLogTypes.map((t) => <option key={t} value={t}>{t.charAt(0) + t.slice(1).toLowerCase()}</option>)}
                     </select>
                   </div>
                   <div className="form-group" style={{ marginBottom: 0 }}>
@@ -841,13 +863,35 @@ export default function TicketDetail() {
               )}
               {totalHours > 0 ? (
                 <div className="timelog-summary">
-                  {TIME_LOG_TYPES.map((type) => timeByType[type] ? (
-                    <div key={type} className="timelog-row">
-                      <span className="timelog-type">{type.charAt(0) + type.slice(1).toLowerCase()}</span>
-                      <span className="timelog-hours">{timeByType[type]}h</span>
+                  {(t.timeLogs ?? []).map((log: any) => (
+                    <div key={log.id} className="timelog-row" style={{ justifyContent: 'space-between' }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 6, flex: 1 }}>
+                        <span className="timelog-type">{log.type.charAt(0) + log.type.slice(1).toLowerCase()}</span>
+                        {log.note && <span style={{ fontSize: 11, color: 'var(--text-3)', flex: 1 }} title={log.note}>{log.note.length > 30 ? log.note.slice(0, 30) + '…' : log.note}</span>}
+                      </div>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                        <span className="timelog-hours">{log.hours}h</span>
+                        {(user?.role === 'ADMIN' || log.userId === user?.id) && (
+                          <button
+                            type="button"
+                            className="btn btn-ghost btn-xs"
+                            style={{ color: '#dc2626', padding: '0 4px' }}
+                            title="Delete time entry"
+                            onClick={async () => {
+                              const ok = await confirm({ title: 'Delete time entry', message: `Delete ${log.hours}h of ${log.type.toLowerCase()} time?`, confirmLabel: 'Delete', danger: true });
+                              if (!ok) return;
+                              await api.delete(`/tickets/${id}/timelogs/${log.id}`);
+                              refresh();
+                              toast.success('Time entry deleted');
+                            }}
+                          >
+                            🗑
+                          </button>
+                        )}
+                      </div>
                     </div>
-                  ) : null)}
-                  <div className="timelog-row timelog-total">
+                  ))}
+                  <div className="timelog-row timelog-total" style={{ marginTop: 6, borderTop: '1px solid var(--border)' }}>
                     <span>Total</span>
                     <span>{totalHours}h</span>
                   </div>
@@ -968,7 +1012,7 @@ export default function TicketDetail() {
                   onChange={(e) => patchDraft('priority', e.target.value)}
                   style={{ fontSize: 13 }}
                 >
-                  {PRIORITIES.map((p) => <option key={p} value={p}>{PRIORITY_LABELS[p]}</option>)}
+                  {configuredPriorities.map((p) => <option key={p} value={p}>{PRIORITY_LABELS[p as keyof typeof PRIORITY_LABELS] ?? p}</option>)}
                 </select>
               ) : (
                 <span className={`badge ${t.priority}`}>{PRIORITY_LABELS[t.priority] ?? t.priority}</span>
@@ -1065,23 +1109,49 @@ export default function TicketDetail() {
                       </button>
                     ))}
                   </div>
-                  <div style={{ display: 'flex', gap: 4 }}>
-                    <input
-                      type="text"
-                      placeholder="Add tag…"
-                      value={tagInput}
-                      list="tag-suggestions"
-                      onChange={(e) => setTagInput(e.target.value)}
-                      onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); createAndAddTag(); } }}
-                      style={{ fontSize: 12, padding: '4px 8px', flex: 1 }}
-                    />
-                    <datalist id="tag-suggestions">
-                      {allTags.filter((tg: any) => !ticketTags.includes(tg.id)).map((tg: any) => (
-                        <option key={tg.id} value={tg.name} />
+                  {/* Dropdown from configured tag options */}
+                  {configuredTagOptions.length > 0 ? (
+                    <select
+                      value=""
+                      onChange={async (e) => {
+                        const name = e.target.value;
+                        if (!name) return;
+                        const existing = allTags.find((tg: any) => tg.name === name);
+                        if (existing) {
+                          if (!ticketTags.includes(existing.id)) await api.post(`/tickets/${id}/tags`, { tagId: existing.id });
+                        } else {
+                          const { data: tag } = await api.post('/tags', { name });
+                          await api.post(`/tickets/${id}/tags`, { tagId: tag.id });
+                          qc.invalidateQueries({ queryKey: ['tags'] });
+                        }
+                        refresh();
+                      }}
+                      style={{ fontSize: 12, padding: '4px 8px' }}
+                    >
+                      <option value="">+ Add tag…</option>
+                      {configuredTagOptions.filter((name) => !t.tags?.some((tt: any) => tt.tag.name === name)).map((name) => (
+                        <option key={name} value={name}>{name}</option>
                       ))}
-                    </datalist>
-                    <button type="button" className="btn btn-secondary btn-xs" onClick={createAndAddTag}>Add</button>
-                  </div>
+                    </select>
+                  ) : (
+                    <div style={{ display: 'flex', gap: 4 }}>
+                      <input
+                        type="text"
+                        placeholder="Add tag…"
+                        value={tagInput}
+                        list="tag-suggestions"
+                        onChange={(e) => setTagInput(e.target.value)}
+                        onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); createAndAddTag(); } }}
+                        style={{ fontSize: 12, padding: '4px 8px', flex: 1 }}
+                      />
+                      <datalist id="tag-suggestions">
+                        {allTags.filter((tg: any) => !ticketTags.includes(tg.id)).map((tg: any) => (
+                          <option key={tg.id} value={tg.name} />
+                        ))}
+                      </datalist>
+                      <button type="button" className="btn btn-secondary btn-xs" onClick={createAndAddTag}>Add</button>
+                    </div>
+                  )}
                 </div>
               </MetaRow>
             )}
@@ -1217,9 +1287,22 @@ export default function TicketDetail() {
                 <>
                   <div className="form-group" style={{ marginBottom: 8 }}>
                     <label className="form-label">Root Cause</label>
-                    <textarea rows={2} placeholder="What caused this issue?"
-                      value={draft.rootCause ?? t.rootCause ?? ''}
-                      onChange={(e) => patchDraft('rootCause', e.target.value)} />
+                    {rootCauseOptions.length > 0 ? (() => {
+                      const currentRca = draft.rootCause ?? t.rootCause ?? '';
+                      const opts = currentRca && !rootCauseOptions.includes(currentRca)
+                        ? [currentRca, ...rootCauseOptions]
+                        : rootCauseOptions;
+                      return (
+                        <select value={currentRca} onChange={(e) => patchDraft('rootCause', e.target.value)} style={{ fontSize: 13 }}>
+                          <option value="">— Select root cause —</option>
+                          {opts.map((o) => <option key={o} value={o}>{o}</option>)}
+                        </select>
+                      );
+                    })() : (
+                      <textarea rows={2} placeholder="What caused this issue?"
+                        value={draft.rootCause ?? t.rootCause ?? ''}
+                        onChange={(e) => patchDraft('rootCause', e.target.value)} />
+                    )}
                   </div>
                   <div className="form-group" style={{ marginBottom: 8 }}>
                     <label className="form-label">Corrective Action</label>

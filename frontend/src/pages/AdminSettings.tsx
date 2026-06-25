@@ -520,19 +520,20 @@ function CategorySettings() {
 function SystemSettings() {
   const qc = useQueryClient();
   const [saved, setSaved] = useState(false);
-  const [autoCloseDays, setAutoCloseDays] = useState<number | ''>('');
+  const [form, setForm] = useState<Record<string, any>>({});
 
   const { data: settings, isLoading } = useQuery({
     queryKey: ['admin-settings'],
     queryFn: async () => (await api.get('/admin/settings')).data,
   });
 
-  const current = autoCloseDays !== '' ? autoCloseDays : (settings?.autoCloseDays ?? 5);
+  const eff = (k: string, def: any) => (k in form ? form[k] : (settings?.[k] ?? def));
 
   const saveMutation = useMutation({
     mutationFn: (d: any) => api.patch('/admin/settings', d),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['admin-settings'] });
+      setForm({});
       setSaved(true);
       setTimeout(() => setSaved(false), 2500);
     },
@@ -541,8 +542,19 @@ function SystemSettings() {
   if (isLoading) return <div style={{ padding: 32, textAlign: 'center', color: 'var(--text-3)' }}><span className="spinner" /></div>;
 
   return (
-    <div className="card" style={{ maxWidth: 480 }}>
+    <div className="card" style={{ maxWidth: 520 }}>
       <div className="card-header"><span className="card-title">Ticket lifecycle</span></div>
+      <Field label="Enable auto-close" hint="When enabled, resolved tickets are automatically closed after the configured number of days.">
+        <label style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer', fontSize: 13, marginTop: 4 }}>
+          <input
+            type="checkbox"
+            style={{ width: 'auto' }}
+            checked={eff('autoCloseEnabled', true)}
+            onChange={(e) => setForm((p) => ({ ...p, autoCloseEnabled: e.target.checked }))}
+          />
+          Auto-close enabled
+        </label>
+      </Field>
       <Field
         label="Auto-close after (days)"
         hint="Resolved tickets are automatically closed after this many days of inactivity."
@@ -551,16 +563,17 @@ function SystemSettings() {
           type="number"
           min={1}
           max={365}
-          value={current}
-          onChange={(e) => setAutoCloseDays(parseInt(e.target.value, 10) || '')}
+          value={eff('autoCloseDays', 5)}
+          onChange={(e) => setForm((p) => ({ ...p, autoCloseDays: parseInt(e.target.value, 10) || 5 }))}
           style={{ maxWidth: 120 }}
+          disabled={!eff('autoCloseEnabled', true)}
         />
       </Field>
       <div style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
         <button
           className="btn btn-primary btn-sm"
-          onClick={() => saveMutation.mutate({ autoCloseDays: current })}
-          disabled={saveMutation.isPending}
+          onClick={() => saveMutation.mutate(form)}
+          disabled={saveMutation.isPending || Object.keys(form).length === 0}
         >
           {saveMutation.isPending && <span className="spinner" style={{ width: 12, height: 12 }} />}
           Save
@@ -608,20 +621,38 @@ function OptionListEditor({ title, hint, options, onChange }: {
   );
 }
 
+type ConfigData = {
+  resolutionOptions: string[];
+  rootCauseOptions: string[];
+  tagOptions: string[];
+  priorityOptions: string[];
+  timeLogTypes: string[];
+  escalationContacts: string[];
+};
+
 function DropdownSettings() {
   const qc = useQueryClient();
   const [saved, setSaved] = useState(false);
-  const { data, isLoading } = useQuery<{ resolutionOptions: string[] }>({
+  const { data, isLoading } = useQuery<ConfigData>({
     queryKey: ['admin-config'],
     queryFn: async () => (await api.get('/admin/config')).data,
   });
-  const [resolutionOptions, setResolutionOptions] = useState<string[] | null>(null);
-  const current = resolutionOptions ?? data?.resolutionOptions ?? [];
+  const [local, setLocal] = useState<Partial<ConfigData>>({});
+  const merged = (key: keyof ConfigData): string[] => (local[key] ?? data?.[key] ?? []) as string[];
+  const patch = (key: keyof ConfigData) => (next: string[]) => setLocal((p) => ({ ...p, [key]: next }));
 
   const save = useMutation({
-    mutationFn: () => api.put('/admin/config', { resolutionOptions: current }),
+    mutationFn: () => api.put('/admin/config', {
+      resolutionOptions: merged('resolutionOptions'),
+      rootCauseOptions: merged('rootCauseOptions'),
+      tagOptions: merged('tagOptions'),
+      priorityOptions: merged('priorityOptions'),
+      timeLogTypes: merged('timeLogTypes'),
+      escalationContacts: merged('escalationContacts'),
+    }),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['admin-config'] });
+      setLocal({});
       setSaved(true);
       setTimeout(() => setSaved(false), 2500);
     },
@@ -632,12 +663,12 @@ function DropdownSettings() {
   return (
     <div>
       <p style={{ fontSize: 13, color: 'var(--text-2)' }}>Manage the option lists that appear as dropdowns on tickets.</p>
-      <OptionListEditor
-        title="Resolution"
-        hint="Shown as the Resolution dropdown on the ticket detail page."
-        options={current}
-        onChange={setResolutionOptions}
-      />
+      <OptionListEditor title="Resolution" hint="Resolution outcome dropdown on ticket detail." options={merged('resolutionOptions')} onChange={patch('resolutionOptions')} />
+      <OptionListEditor title="Root Cause" hint="Root cause options on ticket detail RCA section." options={merged('rootCauseOptions')} onChange={patch('rootCauseOptions')} />
+      <OptionListEditor title="Tags" hint="Available tags to apply to tickets." options={merged('tagOptions')} onChange={patch('tagOptions')} />
+      <OptionListEditor title="Priority Levels" hint="Allowed priority values on create and detail. Must include LOW, MEDIUM, HIGH, URGENT." options={merged('priorityOptions')} onChange={patch('priorityOptions')} />
+      <OptionListEditor title="Time Log Types" hint="Work categories when logging time on a ticket." options={merged('timeLogTypes')} onChange={patch('timeLogTypes')} />
+      <OptionListEditor title="Escalation Contacts (L1/L2/L3)" hint='Contacts to notify on escalation — format: "L1: name@example.com".' options={merged('escalationContacts')} onChange={patch('escalationContacts')} />
       <div style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
         <button className="btn btn-primary btn-sm" onClick={() => save.mutate()} disabled={save.isPending}>
           {save.isPending ? 'Saving…' : 'Save changes'}

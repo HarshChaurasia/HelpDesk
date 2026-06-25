@@ -358,6 +358,7 @@ export class TicketsService {
     if (q.createdAfter) where.createdAt = { ...where.createdAt, gte: new Date(q.createdAfter) };
     if (q.createdBefore) where.createdAt = { ...where.createdAt, lte: new Date(q.createdBefore) };
     if (q.slaBreached === 'true') where.slaBreached = true;
+    if (q.escalated === 'true') where.escalation = { is: { resolvedAt: null } };
     if (q.q) {
       where.AND = [
         {
@@ -390,8 +391,10 @@ export class TicketsService {
           category: { select: { id: true, name: true } },
           subcategory: { select: { id: true, name: true } },
           assignedTo: { select: { id: true, fullName: true } },
+          assignees: { include: { user: { select: { id: true, fullName: true } } } },
           createdBy: { select: { id: true, fullName: true, email: true } },
           tags: { include: { tag: true } },
+          escalation: { include: { escalatedBy: { select: { id: true, fullName: true } } } },
         },
         orderBy,
         skip: (page - 1) * limit,
@@ -430,20 +433,32 @@ export class TicketsService {
   async escalate(ticketId: string, level: number, reason: string, user: AuthUser) {
     const ticket = await this.prisma.ticket.findUnique({ where: { id: ticketId } });
     if (!ticket) throw new NotFoundException('Ticket not found');
-    return this.prisma.escalation.upsert({
+    const esc = await this.prisma.escalation.upsert({
       where: { ticketId },
       update: { level, reason, resolvedAt: null, escalatedById: user.id, updatedAt: new Date() },
       create: { ticketId, level, reason, escalatedById: user.id },
     });
+    await this.writeEvent(ticketId, EventType.ESCALATED, user.id, undefined, `L${level}`);
+    return esc;
   }
 
   async deEscalate(ticketId: string, user: AuthUser) {
     const esc = await this.prisma.escalation.findUnique({ where: { ticketId } });
     if (!esc) throw new NotFoundException('No active escalation found');
-    return this.prisma.escalation.update({
+    const updated = await this.prisma.escalation.update({
       where: { ticketId },
       data: { resolvedAt: new Date() },
     });
+    await this.writeEvent(ticketId, EventType.DE_ESCALATED, user.id);
+    return updated;
+  }
+
+  async deleteTimeLog(ticketId: string, logId: string, user: AuthUser) {
+    const log = await this.prisma.ticketTimeLog.findUnique({ where: { id: logId } });
+    if (!log || log.ticketId !== ticketId) throw new NotFoundException('Time log not found');
+    if (user.role !== Role.ADMIN && log.userId !== user.id) throw new ForbiddenException('Not allowed');
+    await this.prisma.ticketTimeLog.delete({ where: { id: logId } });
+    return { ok: true };
   }
 
   async mergeTickets(sourceId: string, targetId: string, user: AuthUser) {
