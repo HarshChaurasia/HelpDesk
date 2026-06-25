@@ -8,6 +8,7 @@ import { useUi } from '../ui';
 import { STATUS_LABELS, PRIORITY_LABELS, avatarInitials, avatarStyle, relativeTime, formatDate } from '../utils';
 import RichTextEditor from '../components/RichTextEditor';
 import UserCombobox, { UserOption } from '../components/UserCombobox';
+import TagCombobox from '../components/TagCombobox';
 import AttachmentPanel from '../components/AttachmentPanel';
 
 const DEFAULT_PRIORITIES = ['LOW', 'MEDIUM', 'HIGH', 'URGENT'];
@@ -174,8 +175,6 @@ export default function TicketDetail() {
   const [csatSubmitting, setCsatSubmitting] = useState(false);
   const [csatDone, setCsatDone] = useState(false);
 
-  // Tag input
-  const [tagInput, setTagInput] = useState('');
 
   const { data: t, isLoading } = useQuery({
     queryKey: ['ticket', id],
@@ -432,15 +431,6 @@ export default function TicketDetail() {
 
   async function unlinkRelated(relatedId: string) {
     await api.delete(`/tickets/${id}/related/${relatedId}`);
-    refresh();
-  }
-
-  async function createAndAddTag() {
-    if (!tagInput.trim()) return;
-    const { data: tag } = await api.post('/tags', { name: tagInput.trim() });
-    await api.post(`/tickets/${id}/tags`, { tagId: tag.id });
-    setTagInput('');
-    qc.invalidateQueries({ queryKey: ['tags'] });
     refresh();
   }
 
@@ -1097,62 +1087,29 @@ export default function TicketDetail() {
             {/* Tags */}
             {isStaff && (
               <MetaRow label="Tags">
-                <div>
-                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4, marginBottom: 6 }}>
-                    {t.tags?.map((tt: any) => (
-                      <button key={tt.tagId} type="button" className="tag-chip tag-chip-removable"
-                        style={{ background: tt.tag.color + '22', color: tt.tag.color, borderColor: tt.tag.color + '44' }}
-                        onClick={() => toggleTag(tt.tagId)}
-                        title="Click to remove"
-                      >
-                        {tt.tag.name} ×
-                      </button>
-                    ))}
-                  </div>
-                  {/* Dropdown from configured tag options */}
-                  {configuredTagOptions.length > 0 ? (
-                    <select
-                      value=""
-                      onChange={async (e) => {
-                        const name = e.target.value;
-                        if (!name) return;
-                        const existing = allTags.find((tg: any) => tg.name === name);
-                        if (existing) {
-                          if (!ticketTags.includes(existing.id)) await api.post(`/tickets/${id}/tags`, { tagId: existing.id });
-                        } else {
-                          const { data: tag } = await api.post('/tags', { name });
-                          await api.post(`/tickets/${id}/tags`, { tagId: tag.id });
-                          qc.invalidateQueries({ queryKey: ['tags'] });
-                        }
-                        refresh();
-                      }}
-                      style={{ fontSize: 12, padding: '4px 8px' }}
-                    >
-                      <option value="">+ Add tag…</option>
-                      {configuredTagOptions.filter((name) => !t.tags?.some((tt: any) => tt.tag.name === name)).map((name) => (
-                        <option key={name} value={name}>{name}</option>
-                      ))}
-                    </select>
-                  ) : (
-                    <div style={{ display: 'flex', gap: 4 }}>
-                      <input
-                        type="text"
-                        placeholder="Add tag…"
-                        value={tagInput}
-                        list="tag-suggestions"
-                        onChange={(e) => setTagInput(e.target.value)}
-                        onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); createAndAddTag(); } }}
-                        style={{ fontSize: 12, padding: '4px 8px', flex: 1 }}
-                      />
-                      <datalist id="tag-suggestions">
-                        {allTags.filter((tg: any) => !ticketTags.includes(tg.id)).map((tg: any) => (
-                          <option key={tg.id} value={tg.name} />
-                        ))}
-                      </datalist>
-                      <button type="button" className="btn btn-secondary btn-xs" onClick={createAndAddTag}>Add</button>
-                    </div>
-                  )}
-                </div>
+                <TagCombobox
+                  options={
+                    configuredTagOptions.length > 0
+                      ? configuredTagOptions.map((name) => {
+                          const existing = allTags.find((tg: any) => tg.name === name);
+                          return { name, color: existing?.color };
+                        })
+                      : allTags.map((tg: any) => ({ name: tg.name, color: tg.color }))
+                  }
+                  selected={(t.tags ?? []).map((tt: any) => ({ name: tt.tag.name, color: tt.tag.color }))}
+                  onToggle={async (name) => {
+                    const existing = allTags.find((tg: any) => tg.name === name);
+                    if (existing) {
+                      await api.post(`/tickets/${id}/tags`, { tagId: existing.id });
+                    } else {
+                      const { data: tag } = await api.post('/tags', { name });
+                      await api.post(`/tickets/${id}/tags`, { tagId: tag.id });
+                      qc.invalidateQueries({ queryKey: ['tags'] });
+                    }
+                    refresh();
+                  }}
+                  placeholder="Add tags…"
+                />
               </MetaRow>
             )}
 

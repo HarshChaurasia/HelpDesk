@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect } from 'react';
+import { useState, useRef, useEffect, useMemo } from 'react';
 import { avatarInitials, avatarStyle } from '../utils';
 
 export interface UserOption {
@@ -16,78 +16,123 @@ interface Props {
   multi?: boolean;
 }
 
-export default function UserCombobox({ users, selected, onChange, placeholder = 'Search users…', multi = true }: Props) {
+const MAX_VISIBLE = 12;
+
+export default function UserCombobox({
+  users,
+  selected,
+  onChange,
+  placeholder = 'Search users…',
+  multi = true,
+}: Props) {
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState('');
+  // Optimistic local state — updates immediately on click, not waiting for server
+  const [localSelected, setLocalSelected] = useState<UserOption[]>(selected);
   const ref = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
 
-  const MAX_VISIBLE = 15;
-  const allFiltered = users.filter((u) => {
+  // Stable refs so the event listener never needs to be re-registered
+  const localSelectedRef = useRef(localSelected);
+  const onChangeRef = useRef(onChange);
+  const openRef = useRef(open);
+  useEffect(() => { localSelectedRef.current = localSelected; }, [localSelected]);
+  useEffect(() => { onChangeRef.current = onChange; }, [onChange]);
+  useEffect(() => { openRef.current = open; }, [open]);
+
+  // When server data arrives and dropdown is closed, sync local state
+  useEffect(() => {
+    if (!openRef.current) {
+      setLocalSelected(selected);
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selected]);
+
+  const { filtered, hiddenCount } = useMemo(() => {
     const q = query.toLowerCase();
-    return (
-      u.fullName.toLowerCase().includes(q) ||
-      (u.email ?? '').toLowerCase().includes(q)
-    );
-  });
-  const filtered = allFiltered.slice(0, MAX_VISIBLE);
-  const hiddenCount = allFiltered.length - filtered.length;
+    const all = q
+      ? users.filter(
+          (u) =>
+            u.fullName.toLowerCase().includes(q) ||
+            (u.email ?? '').toLowerCase().includes(q),
+        )
+      : users;
+    return {
+      filtered: all.slice(0, MAX_VISIBLE),
+      hiddenCount: Math.max(0, all.length - MAX_VISIBLE),
+    };
+  }, [users, query]);
 
   function toggle(u: UserOption) {
     if (multi) {
-      const exists = selected.some((s) => s.id === u.id);
-      onChange(exists ? selected.filter((s) => s.id !== u.id) : [...selected, u]);
+      const exists = localSelected.some((s) => s.id === u.id);
+      const next = exists
+        ? localSelected.filter((s) => s.id !== u.id)
+        : [...localSelected, u];
+      setLocalSelected(next);
+      onChange(next);
     } else {
-      onChange(selected[0]?.id === u.id ? [] : [u]);
+      const next = localSelected[0]?.id === u.id ? [] : [u];
+      setLocalSelected(next);
+      onChange(next);
       setOpen(false);
       setQuery('');
     }
   }
 
   function remove(id: string) {
-    onChange(selected.filter((s) => s.id !== id));
+    const next = localSelected.filter((s) => s.id !== id);
+    setLocalSelected(next);
+    onChange(next);
   }
 
+  // Register once — reads latest values through refs
   useEffect(() => {
-    function handleClick(e: MouseEvent) {
+    function onMouseDown(e: MouseEvent) {
       if (ref.current && !ref.current.contains(e.target as Node)) {
         setOpen(false);
         setQuery('');
       }
     }
-    document.addEventListener('mousedown', handleClick);
-    return () => document.removeEventListener('mousedown', handleClick);
+    document.addEventListener('mousedown', onMouseDown);
+    return () => document.removeEventListener('mousedown', onMouseDown);
   }, []);
 
   return (
     <div ref={ref} style={{ position: 'relative' }}>
-      {/* Selected chips */}
-      {multi && selected.length > 0 && (
+      {/* Selected chips (multi) */}
+      {multi && localSelected.length > 0 && (
         <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4, marginBottom: 6 }}>
-          {selected.map((u) => (
+          {localSelected.map((u) => (
             <span key={u.id} className="user-chip">
-              <span className="avatar avatar-sm" style={avatarStyle(u.fullName)}>{avatarInitials(u.fullName)}</span>
+              <span className="avatar avatar-sm" style={avatarStyle(u.fullName)}>
+                {avatarInitials(u.fullName)}
+              </span>
               <span style={{ fontSize: 12, fontWeight: 500 }}>{u.fullName}</span>
               <button
                 type="button"
                 className="user-chip-remove"
-                onClick={() => remove(u.id)}
+                onMouseDown={(e) => { e.preventDefault(); remove(u.id); }}
                 title="Remove"
-              >×</button>
+              >
+                ×
+              </button>
             </span>
           ))}
         </div>
       )}
 
-      {/* Input */}
+      {/* Input trigger */}
       <div
         className={`combobox-input-wrap${open ? ' focused' : ''}`}
         onClick={() => { setOpen(true); inputRef.current?.focus(); }}
       >
-        {!multi && selected.length > 0 && !open ? (
+        {!multi && localSelected.length > 0 && !open ? (
           <div className="user-cell" style={{ padding: '4px 6px', cursor: 'pointer', minHeight: 34 }}>
-            <span className="avatar avatar-sm" style={avatarStyle(selected[0].fullName)}>{avatarInitials(selected[0].fullName)}</span>
-            <span style={{ fontSize: 13 }}>{selected[0].fullName}</span>
+            <span className="avatar avatar-sm" style={avatarStyle(localSelected[0].fullName)}>
+              {avatarInitials(localSelected[0].fullName)}
+            </span>
+            <span style={{ fontSize: 13 }}>{localSelected[0].fullName}</span>
           </div>
         ) : (
           <input
@@ -96,8 +141,11 @@ export default function UserCombobox({ users, selected, onChange, placeholder = 
             value={query}
             onChange={(e) => { setQuery(e.target.value); setOpen(true); }}
             onFocus={() => setOpen(true)}
-            placeholder={selected.length === 0 || multi ? placeholder : ''}
-            style={{ border: 'none', outline: 'none', boxShadow: 'none', padding: '6px 8px', background: 'transparent', width: '100%', fontSize: 13 }}
+            placeholder={localSelected.length === 0 || multi ? placeholder : ''}
+            style={{
+              border: 'none', outline: 'none', boxShadow: 'none',
+              padding: '6px 8px', background: 'transparent', width: '100%', fontSize: 13,
+            }}
           />
         )}
       </div>
@@ -106,28 +154,39 @@ export default function UserCombobox({ users, selected, onChange, placeholder = 
       {open && (
         <div className="combobox-dropdown">
           {filtered.length === 0 ? (
-            <div style={{ padding: '8px 12px', color: 'var(--text-3)', fontSize: 13 }}>No users found</div>
+            <div style={{ padding: '8px 12px', color: 'var(--text-3)', fontSize: 13 }}>
+              No users found
+            </div>
           ) : (
             <>
               {filtered.map((u) => {
-                const isSelected = selected.some((s) => s.id === u.id);
+                const isSel = localSelected.some((s) => s.id === u.id);
                 return (
                   <div
                     key={u.id}
-                    className={`combobox-option${isSelected ? ' selected' : ''}`}
+                    className={`combobox-option${isSel ? ' selected' : ''}`}
                     onMouseDown={(e) => { e.preventDefault(); toggle(u); }}
                   >
-                    <span className="avatar avatar-sm" style={avatarStyle(u.fullName)}>{avatarInitials(u.fullName)}</span>
+                    <span className="avatar avatar-sm" style={avatarStyle(u.fullName)}>
+                      {avatarInitials(u.fullName)}
+                    </span>
                     <div style={{ flex: 1, minWidth: 0 }}>
                       <div style={{ fontSize: 13, fontWeight: 500 }}>{u.fullName}</div>
-                      {u.email && <div style={{ fontSize: 11.5, color: 'var(--text-3)' }}>{u.email}</div>}
+                      {u.email && (
+                        <div style={{ fontSize: 11.5, color: 'var(--text-3)' }}>{u.email}</div>
+                      )}
                     </div>
-                    {isSelected && <span style={{ color: 'var(--brand)', fontSize: 14 }}>✓</span>}
+                    {isSel && <span style={{ color: 'var(--brand)', fontSize: 14 }}>✓</span>}
                   </div>
                 );
               })}
               {hiddenCount > 0 && (
-                <div style={{ padding: '6px 12px', color: 'var(--text-3)', fontSize: 12, borderTop: '1px solid var(--border)', fontStyle: 'italic' }}>
+                <div
+                  style={{
+                    padding: '6px 12px', color: 'var(--text-3)', fontSize: 12,
+                    borderTop: '1px solid var(--border)', fontStyle: 'italic',
+                  }}
+                >
                   {hiddenCount} more — type to filter
                 </div>
               )}
