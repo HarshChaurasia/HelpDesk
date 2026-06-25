@@ -22,13 +22,16 @@ export default function UserCombobox({ users, selected, onChange, placeholder = 
   const ref = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
 
-  const filtered = users.filter((u) => {
+  const MAX_VISIBLE = 15;
+  const allFiltered = users.filter((u) => {
     const q = query.toLowerCase();
     return (
       u.fullName.toLowerCase().includes(q) ||
       (u.email ?? '').toLowerCase().includes(q)
     );
   });
+  const filtered = allFiltered.slice(0, MAX_VISIBLE);
+  const hiddenCount = allFiltered.length - filtered.length;
 
   function toggle(u: UserOption) {
     if (multi) {
@@ -105,23 +108,30 @@ export default function UserCombobox({ users, selected, onChange, placeholder = 
           {filtered.length === 0 ? (
             <div style={{ padding: '8px 12px', color: 'var(--text-3)', fontSize: 13 }}>No users found</div>
           ) : (
-            filtered.map((u) => {
-              const isSelected = selected.some((s) => s.id === u.id);
-              return (
-                <div
-                  key={u.id}
-                  className={`combobox-option${isSelected ? ' selected' : ''}`}
-                  onMouseDown={(e) => { e.preventDefault(); toggle(u); }}
-                >
-                  <span className="avatar avatar-sm" style={avatarStyle(u.fullName)}>{avatarInitials(u.fullName)}</span>
-                  <div style={{ flex: 1, minWidth: 0 }}>
-                    <div style={{ fontSize: 13, fontWeight: 500 }}>{u.fullName}</div>
-                    {u.email && <div style={{ fontSize: 11.5, color: 'var(--text-3)' }}>{u.email}</div>}
+            <>
+              {filtered.map((u) => {
+                const isSelected = selected.some((s) => s.id === u.id);
+                return (
+                  <div
+                    key={u.id}
+                    className={`combobox-option${isSelected ? ' selected' : ''}`}
+                    onMouseDown={(e) => { e.preventDefault(); toggle(u); }}
+                  >
+                    <span className="avatar avatar-sm" style={avatarStyle(u.fullName)}>{avatarInitials(u.fullName)}</span>
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <div style={{ fontSize: 13, fontWeight: 500 }}>{u.fullName}</div>
+                      {u.email && <div style={{ fontSize: 11.5, color: 'var(--text-3)' }}>{u.email}</div>}
+                    </div>
+                    {isSelected && <span style={{ color: 'var(--brand)', fontSize: 14 }}>✓</span>}
                   </div>
-                  {isSelected && <span style={{ color: 'var(--brand)', fontSize: 14 }}>✓</span>}
+                );
+              })}
+              {hiddenCount > 0 && (
+                <div style={{ padding: '6px 12px', color: 'var(--text-3)', fontSize: 12, borderTop: '1px solid var(--border)', fontStyle: 'italic' }}>
+                  {hiddenCount} more — type to filter
                 </div>
-              );
-            })
+              )}
+            </>
           )}
         </div>
       )}
