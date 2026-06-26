@@ -5,13 +5,15 @@ import { api } from '../api';
 import { useAuth } from '../auth';
 import RichTextEditor from '../components/RichTextEditor';
 import UserCombobox, { UserOption } from '../components/UserCombobox';
+import { PRIORITY_LABELS } from '../utils';
 
-const PRIORITIES = [
-  { value: 'LOW',    label: 'Low',    desc: 'Non-urgent, general questions' },
-  { value: 'MEDIUM', label: 'Medium', desc: 'Standard support request' },
-  { value: 'HIGH',   label: 'High',   desc: 'Significant impact, needs prompt attention' },
-  { value: 'URGENT', label: 'Urgent', desc: 'Critical issue, business blocked' },
-];
+const DEFAULT_PRIORITIES = ['LOW', 'MEDIUM', 'HIGH', 'URGENT'];
+const PRIORITY_DESC: Record<string, string> = {
+  LOW:    'Non-urgent, general questions',
+  MEDIUM: 'Standard support request',
+  HIGH:   'Significant impact, needs prompt attention',
+  URGENT: 'Critical issue, business blocked',
+};
 
 export default function NewTicket() {
   const nav = useNavigate();
@@ -50,6 +52,15 @@ export default function NewTicket() {
     queryFn: async () => (await api.get('/users/customers')).data,
     enabled: isStaff,
   });
+
+  // Configurable priority list (Settings → Dropdowns). Staff-only endpoint —
+  // customers fall back to the canonical defaults.
+  const { data: optionConfig } = useQuery<{ priorityOptions: string[] }>({
+    queryKey: ['admin-config'],
+    queryFn: async () => (await api.get('/admin/config')).data,
+    enabled: isStaff,
+  });
+  const priorities = optionConfig?.priorityOptions?.length ? optionConfig.priorityOptions : DEFAULT_PRIORITIES;
 
   async function submit(e: React.FormEvent) {
     e.preventDefault();
@@ -137,7 +148,7 @@ export default function NewTicket() {
             const cat = categories?.find((c: any) => c.id === categoryId);
             const subs: any[] = cat?.subcategories ?? [];
             return (
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0 16px' }}>
+              <div className="grid-2">
                 <div className="form-group">
                   <label className="form-label">Category</label>
                   <select value={categoryId} onChange={(e) => { setCategoryId(e.target.value); setSubcategoryId(''); }}>
@@ -163,13 +174,15 @@ export default function NewTicket() {
             );
           })()}
 
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0 16px' }}>
+          <div className="grid-2">
             <div className="form-group">
               <label className="form-label">Priority</label>
               <select value={priority} onChange={(e) => setPriority(e.target.value)}>
-                {PRIORITIES.map((p) => (
-                  <option key={p.value} value={p.value}>{p.label} — {p.desc}</option>
-                ))}
+                {priorities.map((p) => {
+                  const label = PRIORITY_LABELS[p] ?? p;
+                  const desc = PRIORITY_DESC[p];
+                  return <option key={p} value={p}>{desc ? `${label} — ${desc}` : label}</option>;
+                })}
               </select>
             </div>
 
@@ -209,7 +222,7 @@ export default function NewTicket() {
               System details (optional)
             </button>
             {showSystem && (
-              <div style={{ marginTop: 10, display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0 16px' }}>
+              <div className="grid-2" style={{ marginTop: 10 }}>
                 <div className="form-group">
                   <label className="form-label">Product</label>
                   <input placeholder="e.g. Web Portal" value={sys.product} onChange={(e) => patchSys('product', e.target.value)} />

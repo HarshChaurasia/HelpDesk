@@ -65,6 +65,25 @@ body {
 a { color: var(--brand); text-decoration: none; }
 a:hover { text-decoration: underline; }
 
+/* ─── Thin, subtle scrollbars everywhere (so scroll containers don't show
+   chunky native bars). Firefox uses scrollbar-width/color; WebKit/Chromium
+   uses the ::-webkit-scrollbar pseudo-elements. ─── */
+* { scrollbar-width: thin; scrollbar-color: var(--border-strong) transparent; }
+::-webkit-scrollbar { width: 8px; height: 8px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb {
+  background: var(--border-strong);
+  border-radius: 8px;
+  border: 2px solid transparent;
+  background-clip: padding-box;
+}
+::-webkit-scrollbar-thumb:hover { background: var(--text-3); background-clip: padding-box; }
+::-webkit-scrollbar-corner { background: transparent; }
+
+/* Responsive 2-column grid — collapses to one column on narrow viewports. */
+.grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 0 16px; }
+@media (max-width: 640px) { .grid-2 { grid-template-columns: 1fr; } }
+
 h1 { font-size: 22px; font-weight: 700; line-height: 1.25; color: #1f2937; }
 h2 { font-size: 18px; font-weight: 700; line-height: 1.3;  color: #1f2937; }
 h3 { font-size: 15px; font-weight: 600; line-height: 1.4;  color: #1f2937; }
@@ -373,7 +392,9 @@ textarea { resize: vertical; }
   margin-top: 12px;
   padding-top: 12px;
   border-top: 1px solid var(--border);
-  overflow-y: auto;
+  /* No internal scroll by default — the column flows with the page so that
+     absolutely-positioned combobox dropdowns inside (watchers/assignee/tags)
+     are not clipped. Internal scroll is opt-in via an inline maxHeight. */
   scrollbar-width: thin;
 }
 
@@ -747,7 +768,9 @@ tbody tr:hover { background: #fafbfc; }
 
 .ticket-subject { font-size: 17px; font-weight: 700; color: var(--text); }
 
-.meta-section { margin-bottom: 14px; overflow: hidden; }
+/* No overflow:hidden here — it would clip the combobox dropdowns (watchers,
+   assignee, tags). Long content wraps via the word-break rule below. */
+.meta-section { margin-bottom: 14px; min-width: 0; }
 .meta-label {
   font-size: 11px;
   font-weight: 600;
@@ -756,7 +779,7 @@ tbody tr:hover { background: #fafbfc; }
   color: var(--text-3);
   margin-bottom: 5px;
 }
-.meta-value { font-size: 13.5px; color: var(--text); min-width: 0; overflow: hidden; }
+.meta-value { font-size: 13.5px; color: var(--text); min-width: 0; }
 .meta-section > .meta-value, .meta-section > div { min-width: 0; overflow-wrap: break-word; word-break: break-word; }
 
 /* ═══════════════════════════════════════════════════════
@@ -990,6 +1013,11 @@ tbody tr:hover { background: #fafbfc; }
   .main-content { margin-left: 0; }
   .ticket-layout { grid-template-columns: 1fr; }
   .stats-grid { grid-template-columns: repeat(2, 1fr); }
+  .page-body { padding: 12px 14px; }
+  .page-header { flex-wrap: wrap; }
+}
+@media (max-width: 480px) {
+  .stats-grid { grid-template-columns: 1fr; }
 }
 
 /* ═══════════════════════════════════════════════════════
