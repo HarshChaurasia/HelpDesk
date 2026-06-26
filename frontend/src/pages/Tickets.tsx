@@ -468,7 +468,7 @@ export default function Tickets() {
           <a href="javascript:void(0)" onClick={() => window.location.reload()}>Retry</a>
         </div>
       ) : (
-        <div className={`table-wrap density-${density}`} style={{ flex: 1, overflowY: 'auto', minHeight: 0 }}>
+        <div className={`table-wrap density-${density}`} style={{ flex: 1, overflowY: 'auto', overflowX: 'auto', minHeight: 0 }}>
           <table>
             <thead>
               <tr>
