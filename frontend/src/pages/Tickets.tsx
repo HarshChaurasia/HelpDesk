@@ -530,7 +530,7 @@ export default function Tickets() {
                       </Link>
                       {t.slaBreached && <span className="sla-breached-dot" title="SLA Breached" />}
                     </td>
-                    <td style={{ maxWidth: 280 }}>
+                    <td style={{ maxWidth: 200 }}>
                       <Link to={`/tickets/${t.id}`} style={{ color: 'var(--text)', fontWeight: 500 }} className="truncate" title={t.subject}>
                         {t.subject}
                       </Link>

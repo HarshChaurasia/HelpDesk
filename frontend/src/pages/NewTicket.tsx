@@ -93,7 +93,7 @@ export default function NewTicket() {
   }
 
   return (
-    <div style={{ maxWidth: 700 }}>
+    <div style={{ maxWidth: 760, width: '100%', margin: '0 auto' }}>
       <div className="breadcrumb">
         <Link to="/tickets">Tickets</Link>
         <span className="breadcrumb-sep">›</span>
