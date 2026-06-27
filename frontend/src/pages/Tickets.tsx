@@ -505,7 +505,7 @@ export default function Tickets() {
                 </th>
                 <th>Subcategory</th>
                 <th>Customer</th>
-                {isStaff && <th>Assignee</th>}
+                {isStaff && <th style={{ minWidth: 160 }}>Assignee</th>}
                 <th className="sortable" onClick={() => toggleSort('createdAt')}>
                   Age <SortIcon field="createdAt" />
                 </th>

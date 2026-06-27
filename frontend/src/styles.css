@@ -439,6 +439,7 @@ td {
 tbody tr:last-child td { border-bottom: none; }
 tbody tr { transition: background .1s; }
 tbody tr:hover { background: #fafbfc; }
+:root[data-theme="dark"] tbody tr:hover { background: #1e2d40; }
 
 /* ═══════════════════════════════════════════════════════
    Avatars
@@ -1774,11 +1775,26 @@ tbody tr:hover .row-actions { opacity: 1; }
   --border: #1f2937;
   --border-strong: #374151;
 
-  --text: #e5e7eb;
-  --text-2: #9ca3af;
-  --text-3: #6b7280;
+  --text: #f1f5f9;
+  --text-2: #b0b7c3;
+  --text-3: #8b95a1;
 
   --brand-bg: #1e293b;
+
+  /* Status badge dark overrides */
+  --s-new-bg:  #0c2d4a; --s-new-fg:  #38bdf8;
+  --s-open-bg: #052e16; --s-open-fg: #4ade80;
+  --s-prog-bg: #1e3a5f; --s-prog-fg: #60a5fa;
+  --s-pend-bg: #431407; --s-pend-fg: #fb923c;
+  --s-res-bg:  #052e16; --s-res-fg:  #86efac;
+  --s-cls-bg:  #1f2937; --s-cls-fg:  #9ca3af;
+  --s-rop-bg:  #450a0a; --s-rop-fg:  #f87171;
+
+  /* Priority badge dark overrides */
+  --p-urg-bg: #450a0a; --p-urg-fg: #fca5a5;
+  --p-hi-bg:  #431407; --p-hi-fg:  #fed7aa;
+  --p-med-bg: #3b2f04; --p-med-fg: #fde68a;
+  --p-low-bg: #052e16; --p-low-fg: #86efac;
 }
 :root[data-theme="dark"] body { background: var(--bg); color: var(--text); }
 :root[data-theme="dark"] .toast { box-shadow: 0 8px 24px rgba(0, 0, 0, .5); }
