@@ -72,6 +72,10 @@ export default function RichTextEditor({ value, onChange, placeholder = 'Write s
   const mentionUsersRef = useRef(mentionUsers);
   useEffect(() => { mentionUsersRef.current = mentionUsers; }, [mentionUsers]);
 
+  // Custom link modal (replaces the native window.prompt dialog)
+  const [linkModal, setLinkModal] = useState<{ url: string } | null>(null);
+  const linkInputRef = useRef<HTMLInputElement>(null);
+
   // Track mention popup
   const [mentionPopup, setMentionPopup] = useState<{
     items: MentionUser[];
@@ -136,13 +140,30 @@ export default function RichTextEditor({ value, onChange, placeholder = 'Write s
     prevValue.current = value;
   }, [value, editor]);
 
-  function setLink() {
+  function openLinkModal() {
     const prev = editor?.getAttributes('link').href ?? '';
-    const url = window.prompt('Enter URL', prev);
-    if (url === null) return;
-    if (url === '') { editor?.chain().focus().extendMarkRange('link').unsetLink().run(); return; }
-    editor?.chain().focus().extendMarkRange('link').setLink({ href: url }).run();
+    setLinkModal({ url: prev });
   }
+
+  function applyLink(raw: string) {
+    const url = raw.trim();
+    if (url === '') {
+      editor?.chain().focus().extendMarkRange('link').unsetLink().run();
+    } else {
+      // Prepend protocol if the user typed a bare domain.
+      const href = /^(https?:|mailto:|tel:|\/|#)/i.test(url) ? url : `https://${url}`;
+      editor?.chain().focus().extendMarkRange('link').setLink({ href }).run();
+    }
+    setLinkModal(null);
+  }
+
+  // Focus the URL field when the modal opens.
+  useEffect(() => {
+    if (linkModal) {
+      const id = setTimeout(() => linkInputRef.current?.focus(), 0);
+      return () => clearTimeout(id);
+    }
+  }, [linkModal]);
 
   if (!editor) return null;
 
@@ -171,7 +192,7 @@ export default function RichTextEditor({ value, onChange, placeholder = 'Write s
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="16 18 22 12 16 6"/><polyline points="8 6 2 12 8 18"/></svg>
         </TB>
         <div className="rte-divider" />
-        <TB onClick={setLink} active={editor.isActive('link')} title="Insert link">
+        <TB onClick={openLinkModal} active={editor.isActive('link')} title="Insert link">
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/></svg>
         </TB>
       </div>
@@ -182,6 +203,48 @@ export default function RichTextEditor({ value, onChange, placeholder = 'Write s
         className="rte-content"
         style={{ minHeight }}
       />
+
+      {/* Link modal */}
+      {linkModal && (
+        <div
+          className="preview-overlay"
+          onMouseDown={(e) => { e.preventDefault(); setLinkModal(null); }}
+        >
+          <div
+            className="preview-modal"
+            style={{ maxWidth: 440 }}
+            onMouseDown={(e) => { e.preventDefault(); e.stopPropagation(); }}
+          >
+            <div className="preview-modal-header">
+              <span style={{ fontSize: 14, fontWeight: 600 }}>{editor.isActive('link') ? 'Edit link' : 'Insert link'}</span>
+              <button type="button" className="btn btn-ghost btn-xs" onClick={() => setLinkModal(null)}>✕</button>
+            </div>
+            <div style={{ padding: 20, display: 'flex', flexDirection: 'column', gap: 14 }}>
+              <div className="form-group" style={{ marginBottom: 0 }}>
+                <label className="form-label">URL</label>
+                <input
+                  ref={linkInputRef}
+                  type="text"
+                  placeholder="https://example.com"
+                  value={linkModal.url}
+                  onChange={(e) => setLinkModal({ url: e.target.value })}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') { e.preventDefault(); applyLink(linkModal.url); }
+                    if (e.key === 'Escape') { e.preventDefault(); setLinkModal(null); }
+                  }}
+                />
+                <span className="form-hint">Leave empty and apply to remove the link.</span>
+              </div>
+              <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
+                <button type="button" className="btn btn-secondary btn-sm" onClick={() => setLinkModal(null)}>Cancel</button>
+                <button type="button" className="btn btn-primary btn-sm" onClick={() => applyLink(linkModal.url)}>
+                  {editor.isActive('link') && !linkModal.url.trim() ? 'Remove link' : 'Apply'}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Mention popup */}
       {mentionPopup && mentionPopup.items.length > 0 && (

@@ -159,6 +159,16 @@ export default function Tickets() {
     });
   }
 
+  async function assignTicket(ticketId: string, userId: string) {
+    try {
+      await api.post(`/tickets/${ticketId}/assign`, { userIds: userId ? [userId] : [] });
+      qc.invalidateQueries({ queryKey: ['tickets'] });
+      toast.success(userId ? 'Assignee updated' : 'Ticket unassigned');
+    } catch (e: any) {
+      toast.error(e.response?.data?.error?.message ?? 'Failed to update assignee');
+    }
+  }
+
   async function quickResolve(id: string) {
     try {
       await api.post(`/tickets/${id}/status`, { status: 'RESOLVED' });
@@ -568,12 +578,19 @@ export default function Tickets() {
                     </td>
                     {isStaff && (
                       <td>
-                        {t.assignedTo?.fullName ? (
-                          <div className="user-cell">
-                            <Avatar name={t.assignedTo.fullName} />
-                            <span style={{ fontSize: 13 }}>{t.assignedTo.fullName}</span>
-                          </div>
-                        ) : <span className="muted">Unassigned</span>}
+                        <div className="user-cell" style={{ gap: 6 }}>
+                          {t.assignedTo?.fullName && <Avatar name={t.assignedTo.fullName} />}
+                          <select
+                            value={t.assignedTo?.id ?? ''}
+                            onChange={(e) => assignTicket(t.id, e.target.value)}
+                            title="Assign agent"
+                            aria-label={`Assignee for ${t.reference}`}
+                            style={{ fontSize: 12.5, padding: '3px 6px', maxWidth: 140, marginBottom: 0 }}
+                          >
+                            <option value="">Unassigned</option>
+                            {agents.map((a: any) => <option key={a.id} value={a.id}>{a.fullName}</option>)}
+                          </select>
+                        </div>
                       </td>
                     )}
                     <td><AgeBadge createdAt={t.createdAt} /></td>

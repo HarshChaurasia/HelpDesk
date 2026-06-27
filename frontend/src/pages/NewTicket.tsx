@@ -29,12 +29,8 @@ export default function NewTicket() {
   const [requester, setRequester] = useState<UserOption[]>([]);
   const [deliveryDate, setDeliveryDate] = useState('');
   const [estimatedEffort, setEstimatedEffort] = useState('');
-  const [showSystem, setShowSystem] = useState(false);
-  const [sys, setSys] = useState({ product: '', module: '', version: '', browser: '', os: '' });
   const [err, setErr] = useState('');
   const [submitting, setSubmitting] = useState(false);
-
-  function patchSys(k: keyof typeof sys, v: string) { setSys((s) => ({ ...s, [k]: v })); }
 
   const { data: categories } = useQuery({
     queryKey: ['categories'],
@@ -79,11 +75,6 @@ export default function NewTicket() {
         assigneeIds: assignees.map((a) => a.id),
         deliveryDate: deliveryDate ? new Date(deliveryDate).toISOString() : undefined,
         estimatedEffortHours: estimatedEffort ? parseFloat(estimatedEffort) : undefined,
-        systemProduct: sys.product || undefined,
-        systemModule: sys.module || undefined,
-        systemVersion: sys.version || undefined,
-        systemBrowser: sys.browser || undefined,
-        systemOs: sys.os || undefined,
       });
       nav(`/tickets/${data.id}`);
     } catch (e: any) {
@@ -93,7 +84,7 @@ export default function NewTicket() {
   }
 
   return (
-    <div style={{ maxWidth: 760, width: '100%', margin: '0 auto' }}>
+    <div style={{ maxWidth: 760 }}>
       <div className="breadcrumb">
         <Link to="/tickets">Tickets</Link>
         <span className="breadcrumb-sep">›</span>
@@ -208,43 +199,6 @@ export default function NewTicket() {
               onChange={(e) => setEstimatedEffort(e.target.value)}
             />
             <span className="form-hint">Rough estimate of work required.</span>
-          </div>
-
-          {/* System details (collapsible — optional) */}
-          <div className="form-group">
-            <button
-              type="button"
-              className="btn btn-ghost btn-xs"
-              onClick={() => setShowSystem((v) => !v)}
-              style={{ padding: 0, fontSize: 13, fontWeight: 500 }}
-            >
-              <span style={{ display: 'inline-block', transition: 'transform .15s', transform: showSystem ? 'rotate(90deg)' : 'rotate(0)', marginRight: 6, fontSize: 11, opacity: 0.6 }}>▶</span>
-              System details (optional)
-            </button>
-            {showSystem && (
-              <div className="grid-2" style={{ marginTop: 10 }}>
-                <div className="form-group">
-                  <label className="form-label">Product</label>
-                  <input placeholder="e.g. Web Portal" value={sys.product} onChange={(e) => patchSys('product', e.target.value)} />
-                </div>
-                <div className="form-group">
-                  <label className="form-label">Module</label>
-                  <input placeholder="e.g. Billing" value={sys.module} onChange={(e) => patchSys('module', e.target.value)} />
-                </div>
-                <div className="form-group">
-                  <label className="form-label">Version</label>
-                  <input placeholder="e.g. 2.4.1" value={sys.version} onChange={(e) => patchSys('version', e.target.value)} />
-                </div>
-                <div className="form-group">
-                  <label className="form-label">Browser</label>
-                  <input placeholder="e.g. Chrome 126" value={sys.browser} onChange={(e) => patchSys('browser', e.target.value)} />
-                </div>
-                <div className="form-group">
-                  <label className="form-label">Operating System</label>
-                  <input placeholder="e.g. Windows 11" value={sys.os} onChange={(e) => patchSys('os', e.target.value)} />
-                </div>
-              </div>
-            )}
           </div>
 
           {isStaff && (
