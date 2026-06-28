@@ -1,7 +1,9 @@
+import { useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
+import { Link } from 'react-router-dom';
 import { api } from '../api';
 import { useAuth } from '../auth';
-import { STATUS_LABELS } from '../utils';
+import { STATUS_LABELS, avatarStyle, avatarInitials } from '../utils';
 
 const STATUS_BAR_COLOR: Record<string, string> = {
   NEW: '#0369a1',
@@ -12,6 +14,38 @@ const STATUS_BAR_COLOR: Record<string, string> = {
   CLOSED: '#6b7280',
   REOPENED: '#b91c1c',
 };
+
+const TIMELOG_TYPE_LABELS: Record<string, string> = {
+  INVESTIGATION: 'Investigation',
+  DEVELOPMENT: 'Development',
+  TESTING: 'Testing',
+  OTHER: 'Other',
+};
+
+interface TimeLogUser { id: string; fullName: string; email: string; }
+interface TimeLogRow {
+  id: string;
+  type: string;
+  hours: number;
+  billable: boolean;
+  note: string | null;
+  loggedAt: string;
+  user: TimeLogUser;
+  ticket: { id: string; reference: string; subject: string };
+}
+interface TimeLogUserTotal { user: TimeLogUser; totalHours: number; billableHours: number; }
+interface TimeLogResponse { rows: TimeLogRow[]; userTotals: TimeLogUserTotal[]; }
+
+function monthBounds(month: string) {
+  // month is "YYYY-MM"
+  const [y, m] = month.split('-').map(Number);
+  const from = new Date(y, m - 1, 1);
+  const to = new Date(y, m, 0); // last day of month
+  const iso = (d: Date) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+  return { from: iso(from), to: iso(to) };
+}
+
+const fmtHours = (h: number) => `${(Math.round(h * 100) / 100)}h`;
 
 export default function Reports() {
   const { user } = useAuth();
@@ -24,6 +58,29 @@ export default function Reports() {
     queryFn: async () => (await api.get('/reports/sla')).data,
     enabled: user?.role === 'ADMIN',
   });
+
+  // Time-log report — defaults to the current month.
+  const now = new Date();
+  const [month, setMonth] = useState(`${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`);
+  const { from, to } = monthBounds(month);
+  const { data: timelog, isLoading: loadTimelog } = useQuery<TimeLogResponse>({
+    queryKey: ['rep-timelog', from, to],
+    queryFn: async () => (await api.get('/reports/timelog', { params: { from, to } })).data,
+  });
+  const monthGrandTotal = timelog?.userTotals.reduce((acc, u) => acc + u.totalHours, 0) ?? 0;
+
+  async function downloadTimelog(format: 'csv' | 'pdf') {
+    const res = await api.get(`/reports/timelog/export-${format}`, {
+      params: { from, to },
+      responseType: 'blob',
+    });
+    const url = URL.createObjectURL(new Blob([res.data]));
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `timelog-${month}.${format}`;
+    a.click();
+    URL.revokeObjectURL(url);
+  }
 
   const byStatus: Record<string, number> = {};
   summary?.byStatus?.forEach((r: any) => (byStatus[r.status] = Number(r._count)));
@@ -144,6 +201,108 @@ export default function Reports() {
               </>
             )}
           </div>
+        )}
+      </div>
+
+      {/* Time-log report */}
+      <div className="card" style={{ marginTop: 16 }}>
+        <div className="card-header" style={{ flexWrap: 'wrap', gap: 12 }}>
+          <span className="card-title">Time logged</span>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginLeft: 'auto' }}>
+            <label className="muted" style={{ fontSize: 13 }}>Month</label>
+            <input
+              type="month"
+              value={month}
+              onChange={(e) => setMonth(e.target.value)}
+              style={{ width: 'auto', marginBottom: 0 }}
+            />
+            <span className="badge" style={{ background: 'var(--brand-bg)', color: 'var(--brand)' }}>
+              {fmtHours(monthGrandTotal)} total
+            </span>
+            <button
+              className="btn btn-secondary btn-sm"
+              onClick={() => downloadTimelog('csv')}
+              disabled={!timelog || timelog.rows.length === 0}
+            >↓ CSV</button>
+            <button
+              className="btn btn-secondary btn-sm"
+              onClick={() => downloadTimelog('pdf')}
+              disabled={!timelog || timelog.rows.length === 0}
+            >↓ PDF</button>
+          </div>
+        </div>
+
+        {loadTimelog ? (
+          <div className="muted">Loading…</div>
+        ) : !timelog || timelog.rows.length === 0 ? (
+          <div className="empty-state">No time logged in this month.</div>
+        ) : (
+          <>
+            {/* Total per user for the month */}
+            <div className="meta-label" style={{ marginBottom: 8 }}>Total per user</div>
+            <div className="table-wrap" style={{ marginBottom: 20 }}>
+              <table>
+                <thead>
+                  <tr>
+                    <th>User</th>
+                    <th style={{ textAlign: 'right' }}>Billable</th>
+                    <th style={{ textAlign: 'right' }}>Total hours</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {timelog.userTotals.map((u) => (
+                    <tr key={u.user.id}>
+                      <td>
+                        <div className="user-cell">
+                          <span className="avatar avatar-sm" style={avatarStyle(u.user.fullName)}>
+                            {avatarInitials(u.user.fullName)}
+                          </span>
+                          <span>{u.user.fullName}</span>
+                        </div>
+                      </td>
+                      <td style={{ textAlign: 'right' }} className="muted">{fmtHours(u.billableHours)}</td>
+                      <td style={{ textAlign: 'right', fontWeight: 700 }}>{fmtHours(u.totalHours)}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+
+            {/* Per-user, per-ticket detail */}
+            <div className="meta-label" style={{ marginBottom: 8 }}>Detail by ticket</div>
+            <div className="table-wrap">
+              <table>
+                <thead>
+                  <tr>
+                    <th>User</th>
+                    <th>Ticket</th>
+                    <th>Type</th>
+                    <th>Date</th>
+                    <th style={{ textAlign: 'right' }}>Hours</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {timelog.rows.map((r) => (
+                    <tr key={r.id}>
+                      <td>{r.user.fullName}</td>
+                      <td>
+                        <Link to={`/tickets/${r.ticket.id}`} style={{ fontWeight: 600 }}>{r.ticket.reference}</Link>
+                        <span className="muted" style={{ marginLeft: 6, fontSize: 12 }}>{r.ticket.subject}</span>
+                      </td>
+                      <td><span className="badge">{TIMELOG_TYPE_LABELS[r.type] ?? r.type}</span></td>
+                      <td className="muted" style={{ fontSize: 12 }}>
+                        {new Date(r.loggedAt).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}
+                      </td>
+                      <td style={{ textAlign: 'right', fontWeight: 600 }}>
+                        {fmtHours(r.hours)}
+                        {!r.billable && <span className="muted" style={{ fontSize: 11, marginLeft: 4 }}>(non-bill)</span>}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </>
         )}
       </div>
     </div>
